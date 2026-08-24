@@ -8,11 +8,14 @@ const DIFFICULTY_NAMES = ["Easy (10%)", "Medium (15%)", "Hard (20%)"]
 
 var revealed_count: int = 0
 var flag_count: int = 0
+var cleared_chunks_count: int = 0
+var locked_chunks_count: int = 0
 var elapsed_time: float = 0.0
 var is_timer_running: bool = false
 
 var explored_label: Label
 var flag_label: Label
+var chunk_stats_label: Label
 var time_label: Label
 var difficulty_option: OptionButton
 var restart_button: Button
@@ -38,6 +41,11 @@ func setup_ui_nodes() -> void:
 		flag_label = get_node("TopBar/MarginContainer/HBoxContainer/FlagLabel") as Label
 	elif flag_label == null:
 		flag_label = Label.new()
+
+	if has_node("TopBar/MarginContainer/HBoxContainer/ChunkStatsLabel"):
+		chunk_stats_label = get_node("TopBar/MarginContainer/HBoxContainer/ChunkStatsLabel") as Label
+	elif chunk_stats_label == null:
+		chunk_stats_label = Label.new()
 
 	if has_node("TopBar/MarginContainer/HBoxContainer/TimeLabel"):
 		time_label = get_node("TopBar/MarginContainer/HBoxContainer/TimeLabel") as Label
@@ -102,6 +110,12 @@ func bind_grid_manager(grid: GridManager) -> void:
 		grid.connect("game_over", Callable(self, "_on_game_over"))
 	if not grid.is_connected("game_reset", Callable(self, "_on_game_reset")):
 		grid.connect("game_reset", Callable(self, "_on_game_reset"))
+	if not grid.is_connected("chunk_locked", Callable(self, "_on_chunk_locked")):
+		grid.connect("chunk_locked", Callable(self, "_on_chunk_locked"))
+	if not grid.is_connected("chunk_cleared", Callable(self, "_on_chunk_cleared")):
+		grid.connect("chunk_cleared", Callable(self, "_on_chunk_cleared"))
+	if not grid.is_connected("chunk_unlocked", Callable(self, "_on_chunk_unlocked")):
+		grid.connect("chunk_unlocked", Callable(self, "_on_chunk_unlocked"))
 
 func _process(delta: float) -> void:
 	if is_timer_running:
@@ -119,6 +133,8 @@ func _update_labels() -> void:
 		explored_label.text = "Explored: %d" % revealed_count
 	if flag_label != null:
 		flag_label.text = "Flags: %d" % flag_count
+	if chunk_stats_label != null:
+		chunk_stats_label.text = "Cleared: %d | Locked: %d" % [cleared_chunks_count, locked_chunks_count]
 	_update_time_label()
 
 func _update_time_label() -> void:
@@ -139,6 +155,20 @@ func _on_cell_flag_changed(_pos: Vector2i, is_flagged: bool) -> void:
 		flag_count = max(0, flag_count - 1)
 	_update_labels()
 
+func _on_chunk_locked(_chunk_pos: Vector2i, _mine_pos: Vector2i) -> void:
+	locked_chunks_count += 1
+	if not is_timer_running:
+		is_timer_running = true
+	_update_labels()
+
+func _on_chunk_cleared(_chunk_pos: Vector2i) -> void:
+	cleared_chunks_count += 1
+	_update_labels()
+
+func _on_chunk_unlocked(_chunk_pos: Vector2i, _recovered_flags: Array[Vector2i]) -> void:
+	locked_chunks_count = max(0, locked_chunks_count - 1)
+	_update_labels()
+
 func _on_game_over(_hit_mine_pos: Vector2i) -> void:
 	is_timer_running = false
 	show_game_over()
@@ -146,6 +176,8 @@ func _on_game_over(_hit_mine_pos: Vector2i) -> void:
 func _on_game_reset() -> void:
 	revealed_count = 0
 	flag_count = 0
+	cleared_chunks_count = 0
+	locked_chunks_count = 0
 	elapsed_time = 0.0
 	is_timer_running = false
 	if game_over_modal != null:
@@ -154,7 +186,7 @@ func _on_game_reset() -> void:
 
 func show_game_over() -> void:
 	if game_over_stats_label != null:
-		game_over_stats_label.text = "Explored: %d cells\nTime: %s" % [revealed_count, format_time(elapsed_time)]
+		game_over_stats_label.text = "Explored: %d cells\nCleared Chunks: %d\nTime: %s" % [revealed_count, cleared_chunks_count, format_time(elapsed_time)]
 	if game_over_modal != null:
 		game_over_modal.visible = true
 

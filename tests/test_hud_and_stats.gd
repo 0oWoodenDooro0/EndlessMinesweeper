@@ -187,6 +187,7 @@ func test_difficulty_selection() -> bool:
 func test_game_over_modal() -> bool:
 	print("[RUN] Test 5: Game Over Modal & Timer Stop")
 	var grid = GridManager.new()
+	grid.enable_chunk_lockout = false
 	var hud = HUD.new()
 	hud.setup_ui_nodes()
 	hud.bind_grid_manager(grid)
@@ -234,6 +235,7 @@ func test_game_over_modal() -> bool:
 func test_restart_reset() -> bool:
 	print("[RUN] Test 6: Restart & State Reset")
 	var grid = GridManager.new()
+	grid.enable_chunk_lockout = false
 	var hud = HUD.new()
 	hud.setup_ui_nodes()
 	hud.bind_grid_manager(grid)

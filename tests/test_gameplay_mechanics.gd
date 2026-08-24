@@ -111,6 +111,7 @@ func test_first_click_safety_integration() -> bool:
 func test_mine_explosion_game_over() -> bool:
 	print("[RUN] Test 3: Mine Explosion & Game Over Trigger")
 	var grid = GridManager.new()
+	grid.enable_chunk_lockout = false
 	grid.set_first_click(Vector2i(100, 100))
 
 	var mine_pos = Vector2i(0, 0)

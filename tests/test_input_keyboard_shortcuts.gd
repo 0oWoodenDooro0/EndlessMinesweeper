@@ -3,6 +3,7 @@ extends SceneTree
 
 const GridManager = preload("res://scripts/grid_manager.gd")
 const CellData = preload("res://scripts/cell_data.gd")
+const HUD = preload("res://scripts/hud.gd")
 
 func _init():
 	print("--- Running Test Suite: Keyboard Shortcuts for Cell Reveal & Flag ---")
@@ -36,6 +37,10 @@ func _init():
 
 	# Test 7: Keyboard Actions Respect Locked Chunk and Frontier Adjacency Restrictions
 	if not test_keyboard_chunk_and_frontier_restrictions():
+		success = false
+
+	# Test 8: Space Reveal Key Disambiguation After HUD Restart Pressed
+	if not test_keyboard_space_reveal_after_restart():
 		success = false
 
 	print("--- Test Suite Finished ---")
@@ -333,3 +338,61 @@ func test_keyboard_chunk_and_frontier_restrictions() -> bool:
 	grid.queue_free()
 	print("[PASS] Test 7: Chunk and Frontier Restrictions verified")
 	return true
+
+func test_keyboard_space_reveal_after_restart() -> bool:
+	print("[RUN] Test 8: Space Reveal Key Disambiguation After HUD Restart Pressed")
+	var grid = GridManager.new()
+	root.add_child(grid)
+	grid.safe_zone_radius = 0
+
+	var hud = HUD.new()
+	root.add_child(hud)
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# Configure cells: cell (0,0) safe, cell (1,0) mine
+	grid.set_mine_at(Vector2i(0, 0), false)
+	grid.set_mine_at(Vector2i(1, 0), true)
+
+	# Simulate pressing Restart button on HUD
+	hud.restart_button.emit_signal("pressed")
+
+	# Verify button has released focus and has focus_mode == FOCUS_NONE
+	if hud.restart_button.focus_mode != Control.FOCUS_NONE:
+		print("[FAIL] restart_button focus_mode is not FOCUS_NONE after restart, got: ", hud.restart_button.focus_mode)
+		hud.queue_free()
+		grid.queue_free()
+		return false
+
+	if hud.restart_button.has_focus():
+		print("[FAIL] restart_button has focus after pressing restart")
+		hud.queue_free()
+		grid.queue_free()
+		return false
+
+	# Hover mouse at cell (0, 0) (world pos: 16, 16)
+	var screen_pos = Vector2(16, 16)
+	grid._unhandled_input(_create_mouse_motion_event(screen_pos))
+
+	# Press Space (reveal_cell action)
+	var space_event = _create_key_event("reveal_cell", KEY_SPACE, true, false)
+	grid._unhandled_input(space_event)
+
+	# Verify cell (0, 0) is revealed and grid is not reset
+	if not grid.get_cell(Vector2i(0, 0)).is_revealed:
+		print("[FAIL] Cell (0, 0) was not revealed upon Space key press after restart")
+		hud.queue_free()
+		grid.queue_free()
+		return false
+
+	if hud.revealed_count != 1:
+		print("[FAIL] HUD revealed_count should be 1 after reveal, got: ", hud.revealed_count)
+		hud.queue_free()
+		grid.queue_free()
+		return false
+
+	hud.queue_free()
+	grid.queue_free()
+	print("[PASS] Test 8: Space Reveal After Restart verified")
+	return true
+

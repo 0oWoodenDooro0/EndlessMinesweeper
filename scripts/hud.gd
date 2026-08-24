@@ -105,6 +105,7 @@ func setup_ui_nodes() -> void:
 		restart_button = get_node("TopBar/MarginContainer/HBoxContainer/RestartButton") as Button
 	elif restart_button == null:
 		restart_button = Button.new()
+	restart_button.focus_mode = Control.FOCUS_NONE
 
 	if has_node("GameOverModal"):
 		game_over_modal = get_node("GameOverModal") as Control
@@ -121,6 +122,7 @@ func setup_ui_nodes() -> void:
 		play_again_button = get_node("GameOverModal/Panel/VBoxContainer/PlayAgainButton") as Button
 	elif play_again_button == null:
 		play_again_button = Button.new()
+	play_again_button.focus_mode = Control.FOCUS_NONE
 
 	# Wire UI events
 	if not restart_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
@@ -220,6 +222,10 @@ func get_game_over_stats_text() -> String:
 	return "Explored: %d cells\nTime: %s" % [revealed_count, format_time(elapsed_time)]
 
 func on_restart_pressed() -> void:
+	if restart_button != null and restart_button.is_inside_tree() and restart_button.has_focus():
+		restart_button.release_focus()
+	if play_again_button != null and play_again_button.is_inside_tree() and play_again_button.has_focus():
+		play_again_button.release_focus()
 	if session != null:
 		session.reset()
 	if grid_manager != null:

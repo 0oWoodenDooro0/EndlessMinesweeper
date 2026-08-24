@@ -32,6 +32,10 @@ func _init():
 	if not test_restart_reset():
 		success = false
 
+	# Test 7: Button Focus Mode & Focus Release Behavior
+	if not test_button_focus_mode_and_release():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -305,3 +309,65 @@ func test_restart_reset() -> bool:
 	grid.free()
 	print("[PASS] Test 6: Restart & state reset verified")
 	return true
+
+func test_button_focus_mode_and_release() -> bool:
+	print("[RUN] Test 7: Button Focus Mode & Focus Release Behavior")
+	var hud_scene = preload("res://scenes/hud.tscn")
+	var hud_inst = hud_scene.instantiate()
+	if hud_inst == null:
+		print("[FAIL] Failed to instantiate hud scene")
+		return false
+
+	var restart_btn = hud_inst.get_node_or_null("TopBar/MarginContainer/HBoxContainer/RestartButton") as Button
+	if restart_btn == null:
+		print("[FAIL] RestartButton node not found")
+		hud_inst.free()
+		return false
+
+	if restart_btn.focus_mode != Control.FOCUS_NONE:
+		print("[FAIL] RestartButton focus_mode in scene is not FOCUS_NONE (0), got: ", restart_btn.focus_mode)
+		hud_inst.free()
+		return false
+
+	var play_again_btn = hud_inst.get_node_or_null("GameOverModal/Panel/VBoxContainer/PlayAgainButton") as Button
+	if play_again_btn == null:
+		print("[FAIL] PlayAgainButton node not found")
+		hud_inst.free()
+		return false
+
+	if play_again_btn.focus_mode != Control.FOCUS_NONE:
+		print("[FAIL] PlayAgainButton focus_mode in scene is not FOCUS_NONE (0), got: ", play_again_btn.focus_mode)
+		hud_inst.free()
+		return false
+
+	hud_inst.free()
+
+	# Also test programmatic HUD instance setup_ui_nodes()
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+
+	if hud.restart_button.focus_mode != Control.FOCUS_NONE:
+		print("[FAIL] Programmatic restart_button focus_mode is not FOCUS_NONE, got: ", hud.restart_button.focus_mode)
+		hud.free()
+		return false
+
+	if hud.play_again_button.focus_mode != Control.FOCUS_NONE:
+		print("[FAIL] Programmatic play_again_button focus_mode is not FOCUS_NONE, got: ", hud.play_again_button.focus_mode)
+		hud.free()
+		return false
+
+	# Test focus release on restart pressed
+	hud.on_restart_pressed()
+	if hud.restart_button.has_focus():
+		print("[FAIL] restart_button retained focus after on_restart_pressed()")
+		hud.free()
+		return false
+	if hud.play_again_button.has_focus():
+		print("[FAIL] play_again_button retained focus after on_restart_pressed()")
+		hud.free()
+		return false
+
+	hud.free()
+	print("[PASS] Test 7: Button focus mode & focus release behavior verified")
+	return true
+

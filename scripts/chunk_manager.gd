@@ -38,6 +38,11 @@ func get_chunk_for_cell(cell_pos: Vector2i) -> ChunkData:
 func has_chunk(c_pos: Vector2i) -> bool:
 	return chunks.has(c_pos)
 
+func preload_chunks_in_rect(min_c_pos: Vector2i, max_c_pos: Vector2i) -> void:
+	for cx in range(min_c_pos.x, max_c_pos.x + 1):
+		for cy in range(min_c_pos.y, max_c_pos.y + 1):
+			get_chunk(Vector2i(cx, cy))
+
 func is_chunk_locked(c_pos: Vector2i) -> bool:
 	if chunks.has(c_pos):
 		return chunks[c_pos].is_locked

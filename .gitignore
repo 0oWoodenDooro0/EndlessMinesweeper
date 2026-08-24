@@ -1,0 +1,6 @@
+# Godot-specific ignores
+.godot/
+
+# OS / Editor ignores
+.DS_Store
+*.tmp

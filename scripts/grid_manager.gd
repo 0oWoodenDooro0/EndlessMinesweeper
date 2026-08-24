@@ -50,6 +50,7 @@ var _is_middle_mouse_down: bool = false
 var _middle_mouse_dragged: bool = false
 var _middle_mouse_press_pos: Vector2 = Vector2.ZERO
 var _middle_mouse_press_cell: Vector2i = Vector2i.ZERO
+var _last_mouse_world_pos: Vector2 = Vector2.ZERO
 
 func _init() -> void:
 	_init_chunk_manager()
@@ -171,6 +172,7 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 	_right_mouse_dragged = false
 	_is_middle_mouse_down = false
 	_middle_mouse_dragged = false
+	_last_mouse_world_pos = Vector2.ZERO
 	if session != null:
 		session.reset(new_density)
 	game_reset.emit()
@@ -357,14 +359,22 @@ func _get_mouse_world_pos(event: InputEventMouse) -> Vector2:
 		return get_global_mouse_position()
 	return event.position
 
+func _get_current_mouse_world_pos(event: InputEvent = null) -> Vector2:
+	if is_inside_tree() and get_viewport() != null:
+		return get_global_mouse_position()
+	if event is InputEventMouse:
+		return event.position
+	return _last_mouse_world_pos
+
 func _unhandled_input(event: InputEvent) -> void:
 	if is_game_over:
 		return
 
 	if event is InputEventMouseButton:
+		var world_pos = _get_mouse_world_pos(event)
+		_last_mouse_world_pos = world_pos
+		var cell_pos = world_to_cell(world_pos)
 		if event.pressed:
-			var world_pos = _get_mouse_world_pos(event)
-			var cell_pos = world_to_cell(world_pos)
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				if event.double_click:
 					chord_reveal(cell_pos)
@@ -393,12 +403,27 @@ func _unhandled_input(event: InputEvent) -> void:
 				_middle_mouse_dragged = false
 
 	elif event is InputEventMouseMotion:
+		var world_pos = _get_mouse_world_pos(event)
+		_last_mouse_world_pos = world_pos
 		if _is_right_mouse_down and not _right_mouse_dragged:
 			if event.position.distance_to(_right_mouse_press_pos) > drag_threshold:
 				_right_mouse_dragged = true
 		if _is_middle_mouse_down and not _middle_mouse_dragged:
 			if event.position.distance_to(_middle_mouse_press_pos) > drag_threshold:
 				_middle_mouse_dragged = true
+
+	elif event.is_action_pressed("reveal_cell") and not event.is_echo():
+		var world_pos = _get_current_mouse_world_pos(event)
+		var cell_pos = world_to_cell(world_pos)
+		if grid_data.has(cell_pos) and grid_data[cell_pos].is_revealed:
+			chord_reveal(cell_pos)
+		else:
+			reveal_cell(cell_pos)
+
+	elif event.is_action_pressed("flag_cell") and not event.is_echo():
+		var world_pos = _get_current_mouse_world_pos(event)
+		var cell_pos = world_to_cell(world_pos)
+		toggle_flag(cell_pos)
 
 func is_lod_active() -> bool:
 	return current_zoom_level <= lod_zoom_threshold

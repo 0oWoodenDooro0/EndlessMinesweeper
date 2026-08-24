@@ -100,7 +100,6 @@ func test_first_click_safety_integration() -> bool:
 	print("[RUN] Test 2: First-Click Safety Integration")
 	var grid = GridManager.new()
 	grid.world_seed = 999
-	grid.mine_density = 0.5 # High density to guarantee mines everywhere normally
 
 	var first_pos = Vector2i(10, 10)
 	if grid.has_first_clicked:

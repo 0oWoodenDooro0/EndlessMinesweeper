@@ -64,16 +64,21 @@ func _calculate_chunk_safe_cells(chunk: ChunkData) -> void:
 	var revealed_count = 0
 	var min_x = chunk.chunk_pos.x * chunk_size.x
 	var min_y = chunk.chunk_pos.y * chunk_size.y
+	var max_x = min_x + chunk_size.x
+	var max_y = min_y + chunk_size.y
 
-	for x in range(min_x, min_x + chunk_size.x):
-		for y in range(min_y, min_y + chunk_size.y):
+	var has_mine_fn = is_mine_provider.is_valid()
+	var has_rev_fn = is_cell_revealed_provider.is_valid()
+
+	for x in range(min_x, max_x):
+		for y in range(min_y, max_y):
 			var p = Vector2i(x, y)
 			var is_mine = false
-			if is_mine_provider.is_valid():
+			if has_mine_fn:
 				is_mine = is_mine_provider.call(p)
 			if not is_mine:
 				safe_count += 1
-				if is_cell_revealed_provider.is_valid() and is_cell_revealed_provider.call(p):
+				if has_rev_fn and is_cell_revealed_provider.call(p):
 					revealed_count += 1
 
 	chunk.total_safe_cells = safe_count

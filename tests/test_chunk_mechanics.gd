@@ -285,7 +285,6 @@ func test_surrounding_8_neighbors_clearing_and_revival() -> bool:
 	print("[RUN] Test 5: Clearing 8 Surrounding Neighbor Chunks Automatically Unlocks Center Chunk")
 	var grid = GridManager.new()
 	grid.chunk_size = Vector2i(2, 2) # 4 cells per chunk
-	grid.mine_density = 1.0 # High density so outer unconfigured cells are mines (no unwanted BFS)
 	grid.set_first_click(Vector2i(100, 100))
 
 	# Setup center chunk (0, 0) with a mine at (0, 0) and 3 safe cells
@@ -383,7 +382,6 @@ func test_unlocked_mine_converted_to_flag_and_subsequent_clear() -> bool:
 	print("[RUN] Test 6: Unlocked Chunk Converts Mine to Flag & Allows Subsequent Chunk Clearance")
 	var grid = GridManager.new()
 	grid.chunk_size = Vector2i(2, 2)
-	grid.mine_density = 1.0 # High density so outer unconfigured cells are mines (no unwanted BFS)
 	grid.set_first_click(Vector2i(100, 100))
 
 	# Setup center chunk (0, 0) with mine at (0, 0) and 3 safe cells
@@ -608,7 +606,6 @@ func test_two_connected_locked_chunks_unlock() -> bool:
 	print("[RUN] Test 9: Two Connected Locked Chunks Unlock on Perimeter Clear")
 	var grid = GridManager.new()
 	grid.chunk_size = Vector2i(2, 2)
-	grid.mine_density = 1.0 # High default density
 	grid.set_first_click(Vector2i(100, 100))
 
 	# Setup Chunk (0, 0) and Chunk (1, 0)
@@ -710,7 +707,6 @@ func test_complex_locked_cluster_unlock() -> bool:
 	print("[RUN] Test 10: Complex L-Shaped Locked Cluster Unlock")
 	var grid = GridManager.new()
 	grid.chunk_size = Vector2i(2, 2)
-	grid.mine_density = 1.0
 	grid.set_first_click(Vector2i(100, 100))
 
 	# 3 Chunks forming an L-shape: (0,0), (1,0), (0,1)
@@ -857,7 +853,6 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 	# 4b. Chord reveal from a cleared chunk into an adjacent uncleared chunk
 	var test_grid = GridManager.new()
 	test_grid.chunk_size = Vector2i(4, 4)
-	test_grid.mine_density = 1.0 # High density blocks infinite BFS
 	test_grid.set_first_click(Vector2i(100, 100))
 	for x in range(4):
 		for y in range(4):
@@ -866,6 +861,7 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 	test_grid.get_cell(Vector2i(-1, 0)).is_revealed = true # Anchor
 	test_grid.set_mine_at(Vector2i(4, 0), false) # safe target in chunk (1, 0)
 	test_grid.set_mine_at(Vector2i(4, 1), true) # mine to flag in chunk (1, 0)
+	test_grid.set_mine_at(Vector2i(1, -1), true) # mine to isolate (2, 0) from cascading
 	test_grid.set_mine_at(Vector2i(2, -1), false)
 	test_grid.set_mine_at(Vector2i(3, -1), false)
 	test_grid.set_mine_at(Vector2i(4, -1), false)
@@ -895,13 +891,15 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 		return false
 
 	# 6. BFS flood fill from adjacent active chunk must NOT expand into cleared chunk
-	# Setup Chunk (1, 0): cells (4, 0) to (7, 3) all safe with 0 mines
-	for x in range(4, 8):
-		for y in range(4):
+	# Setup Chunk (1, 0) and perimeter to be safe with 0 mines
+	for x in range(3, 9):
+		for y in range(-1, 5):
+			if x == 0 and y == 0:
+				continue
 			grid.set_mine_at(Vector2i(x, y), false)
 
 	# Cell (3, 0) is inside cleared chunk (0, 0)
-	grid.reveal_cell(Vector2i(5, 0))
+	grid.reveal_cell(Vector2i(4, 0))
 	if not grid.get_cell(Vector2i(5, 0)).is_revealed:
 		print("[FAIL] Adjacent chunk reveal failed")
 		grid.free()

@@ -69,8 +69,6 @@ func load_game_state(grid: GridManager, hud: HUD = null, camera: CameraControlle
 
 	if hud != null and data.has("hud") and typeof(data["hud"]) == TYPE_DICTIONARY:
 		hud.deserialize(data["hud"])
-		if grid != null:
-			hud.sync_difficulty_with_density(grid.mine_density)
 
 	if camera != null and data.has("camera") and typeof(data["camera"]) == TYPE_DICTIONARY:
 		camera.deserialize(data["camera"])

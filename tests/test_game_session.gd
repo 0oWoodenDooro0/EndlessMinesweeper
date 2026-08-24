@@ -27,8 +27,8 @@ func _init():
 	if not test_session_reset():
 		success = false
 
-	# Test 6: Difficulty Rules & Density Synchronization
-	if not test_difficulty_rules():
+	# Test 6: Stats Contract (No Difficulty Dependencies)
+	if not test_stats_contract():
 		success = false
 
 	# Test 7: Signal Emission Contract (stats_changed, game_over, game_reset)
@@ -79,13 +79,13 @@ func test_initial_state() -> bool:
 		print("[FAIL] Expected is_game_over false initially")
 		return false
 
-	if session.difficulty_index != 1 or not is_equal_approx(session.mine_density, 0.15):
-		print("[FAIL] Expected default difficulty index 1 (0.15), got index: ", session.difficulty_index, " density: ", session.mine_density)
-		return false
-
 	var stats = session.get_stats()
 	if stats.get("revealed_count") != 0 or stats.get("flag_count") != 0:
 		print("[FAIL] get_stats() returned unexpected initial stats: ", stats)
+		return false
+
+	if stats.has("difficulty_index") or stats.has("mine_density"):
+		print("[FAIL] get_stats() contains deprecated difficulty fields: ", stats)
 		return false
 
 	print("[PASS] Test 1: Default initial state verified")
@@ -283,55 +283,31 @@ func test_session_reset() -> bool:
 		print("[FAIL] is_game_over was not cleared on reset()")
 		return false
 
-	# Test reset with custom density
-	session.reset(0.20)
-	if not is_equal_approx(session.mine_density, 0.20) or session.difficulty_index != 2:
-		print("[FAIL] reset(0.20) failed to set difficulty to Hard (0.20, index 2), got density: ", session.mine_density, " index: ", session.difficulty_index)
-		return false
-
 	print("[PASS] Test 5: Session reset lifecycle verified")
 	return true
 
-func test_difficulty_rules() -> bool:
-	print("[RUN] Test 6: Difficulty Rules & Density Synchronization")
+func test_stats_contract() -> bool:
+	print("[RUN] Test 6: Stats Contract (No Difficulty Dependencies)")
 	var session = GameSession.new()
+	session.revealed_count = 10
+	session.flag_count = 2
+	session.cleared_chunks_count = 1
+	session.locked_chunks_count = 0
+	session.elapsed_time = 15.5
+	session.is_timer_running = true
 
-	# Easy (index 0 -> 0.10)
-	session.set_difficulty_by_index(0)
-	if session.difficulty_index != 0 or not is_equal_approx(session.mine_density, 0.10):
-		print("[FAIL] set_difficulty_by_index(0) expected index 0, density 0.10, got: ", session.difficulty_index, ", ", session.mine_density)
+	var stats = session.get_stats()
+	var expected_keys = ["revealed_count", "flag_count", "cleared_chunks_count", "locked_chunks_count", "elapsed_time", "is_timer_running", "is_game_over"]
+	for k in expected_keys:
+		if not stats.has(k):
+			print("[FAIL] Stats missing required key: ", k)
+			return false
+
+	if stats.has("difficulty_index") or stats.has("mine_density"):
+		print("[FAIL] Stats contains deprecated difficulty keys: ", stats)
 		return false
 
-	# Hard (index 2 -> 0.20)
-	session.set_difficulty_by_index(2)
-	if session.difficulty_index != 2 or not is_equal_approx(session.mine_density, 0.20):
-		print("[FAIL] set_difficulty_by_index(2) expected index 2, density 0.20, got: ", session.difficulty_index, ", ", session.mine_density)
-		return false
-
-	# Medium (index 1 -> 0.15)
-	session.set_difficulty_by_index(1)
-	if session.difficulty_index != 1 or not is_equal_approx(session.mine_density, 0.15):
-		print("[FAIL] set_difficulty_by_index(1) expected index 1, density 0.15, got: ", session.difficulty_index, ", ", session.mine_density)
-		return false
-
-	# Out of bounds index
-	session.set_difficulty_by_index(99)
-	if session.difficulty_index != 1:
-		print("[FAIL] Invalid difficulty index should not modify difficulty_index")
-		return false
-
-	# Sync from density
-	session.sync_difficulty_with_density(0.10)
-	if session.difficulty_index != 0:
-		print("[FAIL] sync_difficulty_with_density(0.10) failed to set index 0")
-		return false
-
-	session.sync_difficulty_with_density(0.20)
-	if session.difficulty_index != 2:
-		print("[FAIL] sync_difficulty_with_density(0.20) failed to set index 2")
-		return false
-
-	print("[PASS] Test 6: Difficulty rules & density synchronization verified")
+	print("[PASS] Test 6: Stats contract verified")
 	return true
 
 func test_signal_emission_contract() -> bool:
@@ -380,11 +356,14 @@ func test_serialization_deserialization() -> bool:
 	session1.elapsed_time = 123.45
 	session1.is_timer_running = true
 	session1.is_game_over = false
-	session1.set_difficulty_by_index(2)
 
 	var data = session1.serialize()
 	if data == null or data.is_empty():
 		print("[FAIL] session1.serialize() returned empty dictionary")
+		return false
+
+	if data.has("difficulty_index") or data.has("mine_density"):
+		print("[FAIL] Serialized data should not contain difficulty fields: ", data)
 		return false
 
 	var session2 = GameSession.new()
@@ -405,8 +384,14 @@ func test_serialization_deserialization() -> bool:
 		print("[FAIL] Deserialized timer mismatch: elapsed=", session2.elapsed_time, " running=", session2.is_timer_running)
 		return false
 
-	if session2.difficulty_index != 2 or not is_equal_approx(session2.mine_density, 0.20):
-		print("[FAIL] Deserialized difficulty mismatch: index=", session2.difficulty_index, " density=", session2.mine_density)
+	# Backward compatibility: deserializing legacy save with difficulty fields should succeed
+	var legacy_data = data.duplicate()
+	legacy_data["difficulty_index"] = 2
+	legacy_data["mine_density"] = 0.20
+	var session3 = GameSession.new()
+	var legacy_success = session3.deserialize(legacy_data)
+	if not legacy_success or session3.revealed_count != 42:
+		print("[FAIL] Legacy deserialization failed")
 		return false
 
 	# Invalid data handling

@@ -13,13 +13,16 @@ signal chunk_locked(chunk_pos: Vector2i, mine_pos: Vector2i)
 signal chunk_cleared(chunk_pos: Vector2i)
 signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 
-@export var world_seed: int = 1337
-@export var mine_density: float = 0.15
+@export var world_seed: int = 1337:
+	set(value):
+		world_seed = value
+		_chunk_mine_cache.clear()
 @export var cell_size: Vector2i = Vector2i(32, 32)
 @export var safe_zone_radius: int = 1
 @export var chunk_size: Vector2i = Vector2i(8, 8):
 	set(value):
 		chunk_size = value
+		_chunk_mine_cache.clear()
 		if chunk_manager != null:
 			chunk_manager.chunk_size = value
 @export var enable_chunk_lockout: bool = true
@@ -34,6 +37,8 @@ var has_first_clicked: bool = false
 var first_click_pos: Vector2i = Vector2i.ZERO
 var is_game_over: bool = false
 var grid_data: Dictionary = {} # Vector2i -> CellData
+var _chunk_mine_cache: Dictionary = {} # Vector2i -> Dictionary[Vector2i, bool]
+var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var chunk_manager: ChunkManager = null
 var chunks: Dictionary:
 	get:
@@ -97,13 +102,70 @@ func is_mine_at(pos: Vector2i) -> bool:
 	if is_in_safe_zone(pos):
 		return false
 
-	return _calc_hash_mine(pos)
+	return _is_mine_generated_at(pos)
 
-func _calc_hash_mine(pos: Vector2i) -> bool:
-	var h = hash(Vector3i(pos.x, pos.y, world_seed))
-	var positive_h = h & 0x7FFFFFFF
-	var rand_val = float(positive_h) / float(0x7FFFFFFF)
-	return rand_val < mine_density
+func _get_or_generate_chunk_mines(c_pos: Vector2i) -> Dictionary:
+	if _chunk_mine_cache.has(c_pos):
+		return _chunk_mine_cache[c_pos]
+	var mines_dict = _generate_chunk_mines_dict(c_pos)
+	_chunk_mine_cache[c_pos] = mines_dict
+	return mines_dict
+
+func _generate_chunk_mines_dict(c_pos: Vector2i) -> Dictionary:
+	var chunk_seed = hash(Vector3i(c_pos.x, c_pos.y, world_seed))
+	_rng.seed = chunk_seed
+
+	var w = chunk_size.x
+	var h = chunk_size.y
+	if w <= 0 or h <= 0:
+		w = 8
+		h = 8
+	var total_cells = w * h
+
+	var mine_count = 0
+	if total_cells == 64:
+		var u1 = _rng.randf()
+		var u2 = _rng.randf()
+		var t = (u1 + u2) / 2.0
+		mine_count = 10 + int(floor(16.0 * t))
+		mine_count = clampi(mine_count, 10, 25)
+	else:
+		var u1 = _rng.randf()
+		var u2 = _rng.randf()
+		var t = (u1 + u2) / 2.0
+		var min_m = maxi(1, int(total_cells * (10.0 / 64.0)))
+		var max_m = mini(total_cells - 1, int(total_cells * (25.0 / 64.0)))
+		var range_m = max_m - min_m + 1
+		mine_count = min_m + int(floor(float(range_m) * t))
+		mine_count = clampi(mine_count, min_m, max_m)
+
+	var picked: Dictionary = {}
+	var mines_dict: Dictionary = {}
+	var min_x = c_pos.x * w
+	var min_y = c_pos.y * h
+	for i in range(mine_count):
+		var j = _rng.randi_range(i, total_cells - 1)
+		var val_j = picked.get(j, j)
+		var val_i = picked.get(i, i)
+		picked[j] = val_i
+		picked[i] = val_j
+		var lx = val_j % w
+		var ly = val_j / w
+		mines_dict[Vector2i(min_x + lx, min_y + ly)] = true
+
+	return mines_dict
+
+func _generate_chunk_mines(c_pos: Vector2i) -> Array[Vector2i]:
+	var mines_dict = _get_or_generate_chunk_mines(c_pos)
+	var arr: Array[Vector2i] = []
+	for p in mines_dict:
+		arr.append(p)
+	return arr
+
+func _is_mine_generated_at(pos: Vector2i) -> bool:
+	var c_pos = cell_to_chunk(pos)
+	var mines = _get_or_generate_chunk_mines(c_pos)
+	return mines.has(pos)
 
 func is_in_safe_zone(pos: Vector2i) -> bool:
 	if not has_first_clicked:
@@ -134,7 +196,7 @@ func set_first_click(pos: Vector2i) -> void:
 	for c_pos in affected_chunks:
 		chunk_manager.recalculate_chunk_safe_cells(c_pos)
 
-	preload_surrounding_chunks(chunk_manager.cell_to_chunk(pos), 2)
+	preload_surrounding_chunks(chunk_manager.cell_to_chunk(pos), 1)
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
 	if chunk_manager.is_cell_in_cleared_chunk(pos):
@@ -189,7 +251,6 @@ func count_neighbor_mines(pos: Vector2i) -> int:
 	cell.neighbor_mines_cached = true
 	return count
 
-
 func count_neighbor_flags(pos: Vector2i) -> int:
 	var count = 0
 	for dx in [-1, 0, 1]:
@@ -201,16 +262,15 @@ func count_neighbor_flags(pos: Vector2i) -> int:
 				count += 1
 	return count
 
-func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
+func reset_game(new_seed: int = -1) -> void:
 	has_first_clicked = false
 	first_click_pos = Vector2i.ZERO
 	is_game_over = false
-	if new_density > 0.0:
-		mine_density = new_density
 	if new_seed >= 0:
 		world_seed = new_seed
 	else:
 		world_seed = randi() & 0x7FFFFFFF
+	_chunk_mine_cache.clear()
 	grid_data.clear()
 	chunk_manager.reset(chunk_size)
 	_is_right_mouse_down = false
@@ -219,7 +279,7 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 	_middle_mouse_dragged = false
 	_last_mouse_world_pos = Vector2.ZERO
 	if session != null:
-		session.reset(new_density)
+		session.reset()
 	game_reset.emit()
 	_request_redraw()
 
@@ -251,9 +311,6 @@ func reveal_cell(pos: Vector2i) -> bool:
 		set_first_click(pos)
 
 	preload_surrounding_chunks(chunk_manager.cell_to_chunk(pos), 1)
-
-	# Ensure chunk is initialized before marking cell as revealed
-	var chunk = chunk_manager.get_chunk_for_cell(pos)
 
 	cell.is_revealed = true
 	cell_revealed.emit(pos, cell.is_mine)
@@ -299,8 +356,6 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 				var n_cell = get_cell(n_pos)
 				if n_cell.is_flagged or n_cell.is_revealed:
 					continue
-
-				var n_chunk = chunk_manager.get_chunk_for_cell(n_pos)
 
 				n_cell.is_revealed = true
 				cell_revealed.emit(n_pos, n_cell.is_mine)
@@ -638,7 +693,6 @@ func serialize() -> Dictionary:
 
 	return {
 		"world_seed": world_seed,
-		"mine_density": mine_density,
 		"has_first_clicked": has_first_clicked,
 		"first_click_pos": [first_click_pos.x, first_click_pos.y],
 		"is_game_over": is_game_over,
@@ -650,14 +704,14 @@ func serialize() -> Dictionary:
 	}
 
 func deserialize(data: Dictionary) -> bool:
-	if data == null or not data.has("world_seed") or not data.has("mine_density") or not data.has("cells") or not data.has("chunks"):
+	if data == null or not data.has("world_seed") or not data.has("cells") or not data.has("chunks"):
 		return false
 
 	if not (data["cells"] is Array) or not (data["chunks"] is Array):
 		return false
 
 	world_seed = int(data["world_seed"])
-	mine_density = float(data["mine_density"])
+	_chunk_mine_cache.clear()
 	has_first_clicked = bool(data.get("has_first_clicked", false))
 	if data.has("first_click_pos") and data["first_click_pos"] is Array and data["first_click_pos"].size() >= 2:
 		first_click_pos = Vector2i(int(data["first_click_pos"][0]), int(data["first_click_pos"][1]))

@@ -5,9 +5,6 @@ const GameSession = preload("res://scripts/game_session.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 
-const DIFFICULTIES = GameSession.DIFFICULTIES
-const DIFFICULTY_NAMES = GameSession.DIFFICULTY_NAMES
-
 @export var grid_manager: GridManager
 @export var camera_controller: CameraController
 
@@ -64,7 +61,6 @@ var explored_label: Label
 var flag_label: Label
 var chunk_stats_label: Label
 var time_label: Label
-var difficulty_option: OptionButton
 var restart_button: Button
 
 var game_over_modal: Control
@@ -105,11 +101,6 @@ func setup_ui_nodes() -> void:
 	elif time_label == null:
 		time_label = Label.new()
 
-	if has_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption"):
-		difficulty_option = get_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption") as OptionButton
-	elif difficulty_option == null:
-		difficulty_option = OptionButton.new()
-
 	if has_node("TopBar/MarginContainer/HBoxContainer/RestartButton"):
 		restart_button = get_node("TopBar/MarginContainer/HBoxContainer/RestartButton") as Button
 	elif restart_button == null:
@@ -131,15 +122,7 @@ func setup_ui_nodes() -> void:
 	elif play_again_button == null:
 		play_again_button = Button.new()
 
-	# Populate difficulty options if empty
-	if difficulty_option.item_count == 0:
-		for i in range(DIFFICULTY_NAMES.size()):
-			difficulty_option.add_item(DIFFICULTY_NAMES[i], i)
-		difficulty_option.selected = session.difficulty_index if session != null else 1
-
 	# Wire UI events
-	if not difficulty_option.is_connected("item_selected", Callable(self, "set_difficulty_by_index")):
-		difficulty_option.connect("item_selected", Callable(self, "set_difficulty_by_index"))
 	if not restart_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
 		restart_button.connect("pressed", Callable(self, "on_restart_pressed"))
 	if not play_again_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
@@ -152,8 +135,6 @@ func bind_session(new_session: GameSession) -> void:
 		_disconnect_session_signals()
 	session = new_session
 	_connect_session_signals()
-	if difficulty_option != null and session != null:
-		difficulty_option.selected = session.difficulty_index
 	if grid_manager != null and grid_manager.session != session:
 		grid_manager.bind_session(session)
 	_update_labels()
@@ -167,8 +148,6 @@ func _connect_session_signals() -> void:
 		session.connect("game_over", Callable(self, "_on_session_game_over"))
 	if not session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
 		session.connect("game_reset", Callable(self, "_on_session_game_reset"))
-	if not session.is_connected("difficulty_changed", Callable(self, "_on_session_difficulty_changed")):
-		session.connect("difficulty_changed", Callable(self, "_on_session_difficulty_changed"))
 
 func _disconnect_session_signals() -> void:
 	if session == null:
@@ -179,8 +158,6 @@ func _disconnect_session_signals() -> void:
 		session.disconnect("game_over", Callable(self, "_on_session_game_over"))
 	if session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
 		session.disconnect("game_reset", Callable(self, "_on_session_game_reset"))
-	if session.is_connected("difficulty_changed", Callable(self, "_on_session_difficulty_changed")):
-		session.disconnect("difficulty_changed", Callable(self, "_on_session_difficulty_changed"))
 
 func _auto_find_grid_manager() -> void:
 	if grid_manager != null:
@@ -228,10 +205,6 @@ func _on_session_game_reset() -> void:
 		game_over_modal.visible = false
 	_update_labels()
 
-func _on_session_difficulty_changed(_density: float, index: int) -> void:
-	if difficulty_option != null and difficulty_option.selected != index:
-		difficulty_option.selected = index
-
 func show_game_over() -> void:
 	if game_over_stats_label != null:
 		game_over_stats_label.text = "Explored: %d cells\nCleared Chunks: %d\nTime: %s" % [revealed_count, cleared_chunks_count, format_time(elapsed_time)]
@@ -252,25 +225,8 @@ func on_restart_pressed() -> void:
 	if grid_manager != null:
 		grid_manager.reset_game()
 
-func set_difficulty_by_index(index: int) -> void:
-	if session != null:
-		session.set_difficulty_by_index(index)
-		if grid_manager != null:
-			grid_manager.reset_game(session.mine_density)
-		if difficulty_option != null and difficulty_option.selected != index:
-			difficulty_option.selected = index
-
-func sync_difficulty_with_density(density: float) -> void:
-	if session != null:
-		session.sync_difficulty_with_density(density)
-		if difficulty_option != null and difficulty_option.selected != session.difficulty_index:
-			difficulty_option.selected = session.difficulty_index
-
 func serialize() -> Dictionary:
-	var diff_idx = difficulty_option.selected if difficulty_option != null else (session.difficulty_index if session != null else 1)
-	var data = session.serialize() if session != null else {}
-	data["difficulty_index"] = diff_idx
-	return data
+	return session.serialize() if session != null else {}
 
 func deserialize(data: Dictionary) -> bool:
 	if data == null or not data.has("revealed_count"):
@@ -279,13 +235,6 @@ func deserialize(data: Dictionary) -> bool:
 	var success = session.deserialize(data) if session != null else false
 	if not success:
 		return false
-
-	if data.has("difficulty_index"):
-		var idx = int(data["difficulty_index"])
-		if difficulty_option != null and idx >= 0 and idx < difficulty_option.item_count:
-			difficulty_option.selected = idx
-	elif grid_manager != null:
-		sync_difficulty_with_density(grid_manager.mine_density)
 
 	_update_labels()
 	return true

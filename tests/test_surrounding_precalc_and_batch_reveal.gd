@@ -95,7 +95,6 @@ func test_cache_invalidation_on_mine_change() -> bool:
 	print("[RUN] Test 2: Cache Invalidation on Safe Zone / Mine Modification")
 	var grid = GridManager.new()
 	grid.world_seed = 8888
-	grid.mine_density = 0.5
 	grid.safe_zone_radius = 1
 
 	var target = Vector2i(5, 5)

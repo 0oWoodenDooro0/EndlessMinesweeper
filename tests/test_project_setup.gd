@@ -6,7 +6,7 @@ func _init():
 	var success = true
 	
 	# Test 1: Check Input Map Actions
-	var required_actions = ["left_click", "right_click", "middle_click", "zoom_in", "zoom_out"]
+	var required_actions = ["left_click", "right_click", "middle_click", "zoom_in", "zoom_out", "reveal_cell", "flag_cell"]
 	for action in required_actions:
 		if InputMap.has_action(action):
 			print("[PASS] Input action found: ", action)

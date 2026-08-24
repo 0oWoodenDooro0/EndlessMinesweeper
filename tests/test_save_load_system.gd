@@ -27,7 +27,7 @@ func _init():
 	if not test_camera_serialization_and_deserialization():
 		success = false
 
-	# Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons)
+	# Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons & No Difficulty Option)
 	if not test_hud_no_manual_save_load_buttons():
 		success = false
 
@@ -97,8 +97,7 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 	print("[RUN] Test 2: GridManager Serialization & Deserialization")
 	var grid1 = GridManager.new()
 	grid1.world_seed = 98765
-	grid1.mine_density = 0.25
-	grid1.chunk_size = Vector2i(4, 4)
+	grid1.chunk_size = Vector2i(8, 8)
 	grid1.safe_zone_radius = 2
 	grid1.enable_chunk_lockout = true
 
@@ -125,8 +124,6 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 
 	var grid2 = GridManager.new()
 	grid2.world_seed = 11111
-	grid2.mine_density = 0.10
-	grid2.chunk_size = Vector2i(8, 8)
 
 	var des_res = grid2.deserialize(serialized_data)
 	if not des_res:
@@ -135,13 +132,13 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 		grid2.free()
 		return false
 
-	if grid2.world_seed != 98765 or not is_equal_approx(grid2.mine_density, 0.25):
-		print("[FAIL] Deserialized world settings mismatch")
+	if grid2.world_seed != 98765:
+		print("[FAIL] Deserialized world_seed mismatch: ", grid2.world_seed)
 		grid1.free()
 		grid2.free()
 		return false
 
-	if grid2.chunk_size != Vector2i(4, 4) or grid2.first_click_pos != Vector2i(5, 5):
+	if grid2.chunk_size != Vector2i(8, 8) or grid2.first_click_pos != Vector2i(5, 5):
 		print("[FAIL] Deserialized grid metadata mismatch")
 		grid1.free()
 		grid2.free()
@@ -183,7 +180,6 @@ func test_hud_serialization_and_deserialization() -> bool:
 	hud1.locked_chunks_count = 2
 	hud1.elapsed_time = 145.8
 	hud1.is_timer_running = true
-	hud1.difficulty_option.selected = 2
 
 	var serialized_hud = hud1.serialize()
 	if serialized_hud == null or serialized_hud.is_empty():
@@ -208,12 +204,6 @@ func test_hud_serialization_and_deserialization() -> bool:
 
 	if not is_equal_approx(hud2.elapsed_time, 145.8) or hud2.is_timer_running != true:
 		print("[FAIL] Deserialized HUD timer mismatch")
-		hud1.free()
-		hud2.free()
-		return false
-
-	if hud2.difficulty_option.selected != 2:
-		print("[FAIL] Deserialized difficulty option mismatch: ", hud2.difficulty_option.selected)
 		hud1.free()
 		hud2.free()
 		return false
@@ -257,7 +247,7 @@ func test_camera_serialization_and_deserialization() -> bool:
 	return true
 
 func test_hud_no_manual_save_load_buttons() -> bool:
-	print("[RUN] Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons)")
+	print("[RUN] Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons & No Difficulty Option)")
 	var hud_scene = preload("res://scenes/hud.tscn")
 	var hud_inst = hud_scene.instantiate()
 	if hud_inst == null:
@@ -274,8 +264,13 @@ func test_hud_no_manual_save_load_buttons() -> bool:
 		hud_inst.free()
 		return false
 
+	if hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption"):
+		print("[FAIL] HUD TopBar should NOT have DifficultyOption")
+		hud_inst.free()
+		return false
+
 	hud_inst.free()
-	print("[PASS] Test 5: HUD UI cleanliness verified (No Save/Load buttons)")
+	print("[PASS] Test 5: HUD UI cleanliness verified (No Save/Load buttons & No Difficulty Option)")
 	return true
 
 func test_auto_save_on_gameplay_actions() -> bool:
@@ -292,7 +287,7 @@ func test_auto_save_on_gameplay_actions() -> bool:
 	main.save_file_path = test_path
 
 	var grid = main.get_node("GridManager") as GridManager
-	grid.chunk_size = Vector2i(4, 4)
+	grid.chunk_size = Vector2i(8, 8)
 	grid.safe_zone_radius = 0
 	grid.set_mine_at(Vector2i(10, 9), true)
 
@@ -339,7 +334,7 @@ func test_startup_auto_load() -> bool:
 	if sm.has_save(test_path):
 		sm.delete_save(test_path)
 
-	# 1. Create mock pre-existing save data
+	# 1. Create mock pre-existing save data (including legacy difficulty fields to verify tolerance)
 	var pre_existing_state = {
 		"version": 1,
 		"timestamp": 1234567,
@@ -349,7 +344,7 @@ func test_startup_auto_load() -> bool:
 			"has_first_clicked": true,
 			"first_click_pos": [2, 2],
 			"is_game_over": false,
-			"chunk_size": [4, 4],
+			"chunk_size": [8, 8],
 			"safe_zone_radius": 1,
 			"enable_chunk_lockout": true,
 			"cells": [
@@ -366,7 +361,8 @@ func test_startup_auto_load() -> bool:
 			"cleared_chunks_count": 2,
 			"locked_chunks_count": 1,
 			"elapsed_time": 99.0,
-			"is_timer_running": true
+			"is_timer_running": true,
+			"difficulty_index": 2
 		},
 		"camera": {
 			"position": [500.0, 300.0],
@@ -407,12 +403,6 @@ func test_startup_auto_load() -> bool:
 
 	if cam.position != Vector2(500.0, 300.0) or cam.zoom != Vector2(2.0, 2.0):
 		print("[FAIL] Camera position/zoom not auto-loaded on startup")
-		sm.delete_save(test_path)
-		main.queue_free()
-		return false
-
-	if hud.difficulty_option.selected != 2:
-		print("[FAIL] HUD difficulty option not synchronized on startup auto-load: ", hud.difficulty_option.selected)
 		sm.delete_save(test_path)
 		main.queue_free()
 		return false

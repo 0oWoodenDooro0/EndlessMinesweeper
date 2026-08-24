@@ -12,7 +12,7 @@ func _init():
 	if not test_cell_data_initialization():
 		success = false
 
-	# Test 2: Deterministic Hash Generation
+	# Test 2: Deterministic Generation
 	if not test_deterministic_generation():
 		success = false
 
@@ -50,18 +50,15 @@ func test_cell_data_initialization() -> bool:
 	return true
 
 func test_deterministic_generation() -> bool:
-	print("[RUN] Test 2: Deterministic Hash Generation")
+	print("[RUN] Test 2: Deterministic Generation")
 	var grid1 = GridManager.new()
 	grid1.world_seed = 12345
-	grid1.mine_density = 0.2
 
 	var grid2 = GridManager.new()
 	grid2.world_seed = 12345
-	grid2.mine_density = 0.2
 
 	var grid3 = GridManager.new()
 	grid3.world_seed = 54321
-	grid3.mine_density = 0.2
 
 	var sample_positions = [
 		Vector2i(0, 0), Vector2i(10, 20), Vector2i(-15, 30), Vector2i(100, -200)
@@ -83,27 +80,27 @@ func test_deterministic_generation() -> bool:
 		print("[FAIL] Different seeds produced identical mine distribution across samples")
 		return false
 
-	print("[PASS] Test 2: Deterministic Hash Generation verified")
+	print("[PASS] Test 2: Deterministic generation verified")
 	return true
 
 func test_mine_density() -> bool:
 	print("[RUN] Test 3: Mine Density Distribution")
 	var grid = GridManager.new()
 	grid.world_seed = 98765
-	grid.mine_density = 0.20
 
 	var total_cells = 0
 	var mine_count = 0
-	for x in range(-25, 25):
-		for y in range(-25, 25):
+	for x in range(-24, 24):
+		for y in range(-24, 24):
 			total_cells += 1
 			if grid.is_mine_at(Vector2i(x, y)):
 				mine_count += 1
 
 	var calculated_density = float(mine_count) / float(total_cells)
 	print("Sampled ", total_cells, " cells. Mines: ", mine_count, " Density: ", calculated_density)
-	if calculated_density < 0.12 or calculated_density > 0.28:
-		print("[FAIL] Mine density out of expected range [0.12, 0.28]. Calculated: ", calculated_density)
+	# For [10, 25] mines per 64 cells, expected mean is 17.5 / 64 = ~0.2734
+	if calculated_density < 0.18 or calculated_density > 0.36:
+		print("[FAIL] Mine density out of expected range [0.18, 0.36]. Calculated: ", calculated_density)
 		return false
 
 	print("[PASS] Test 3: Mine density within acceptable statistical variance")
@@ -113,7 +110,6 @@ func test_first_click_guarantee() -> bool:
 	print("[RUN] Test 4: First-Click Guarantee Safe Zone")
 	var grid = GridManager.new()
 	grid.world_seed = 777
-	grid.mine_density = 0.3 # High density to increase chance of mines
 	grid.safe_zone_radius = 1 # 3x3 safe area
 
 	var first_click = Vector2i(12, -8)
@@ -137,6 +133,13 @@ func test_neighbor_mines_count() -> bool:
 	grid.world_seed = 42
 
 	var target_pos = Vector2i(0, 0)
+	# Clear all 8 neighbors first
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			grid.set_mine_at(target_pos + Vector2i(dx, dy), false)
+
 	# Force specific mines around target_pos for testing calculation
 	grid.set_mine_at(Vector2i(-1, -1), true)
 	grid.set_mine_at(Vector2i(0, -1), true)

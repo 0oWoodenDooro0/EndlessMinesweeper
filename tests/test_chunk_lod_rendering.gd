@@ -94,7 +94,6 @@ func test_lazy_cell_rendering() -> bool:
 	print("[RUN] Test 2: Lazy Cell Rendering Memory Protection")
 	var grid = GridManager.new()
 	grid.world_seed = 42
-	grid.mine_density = 0.15
 	grid.visible_rect = Rect2(-320, -320, 640, 640) # 20x20 = 400 cells
 	grid.current_zoom_level = 1.0
 

@@ -20,8 +20,8 @@ func _init():
 	if not test_stats_updating():
 		success = false
 
-	# Test 4: Difficulty Selection & Density Application
-	if not test_difficulty_selection():
+	# Test 4: HUD Layout & Cleanliness (No Difficulty UI)
+	if not test_hud_layout_and_cleanliness():
 		success = false
 
 	# Test 5: Game Over Modal & Timer Stop
@@ -150,40 +150,46 @@ func test_stats_updating() -> bool:
 	print("[PASS] Test 3: Statistics updating on reveal & flag verified")
 	return true
 
-func test_difficulty_selection() -> bool:
-	print("[RUN] Test 4: Difficulty Selection & Density Application")
-	var grid = GridManager.new()
-	var hud = HUD.new()
-	hud.setup_ui_nodes()
-	hud.bind_grid_manager(grid)
-
-	# Select Easy (0 -> 10%)
-	hud.set_difficulty_by_index(0)
-	if not is_equal_approx(grid.mine_density, 0.10):
-		print("[FAIL] Easy density expected 0.10, got ", grid.mine_density)
-		hud.free()
-		grid.free()
+func test_hud_layout_and_cleanliness() -> bool:
+	print("[RUN] Test 4: HUD Layout & Cleanliness (No Difficulty UI)")
+	var hud_scene = preload("res://scenes/hud.tscn")
+	var hud_inst = hud_scene.instantiate()
+	if hud_inst == null:
+		print("[FAIL] Failed to instantiate hud scene")
 		return false
 
-	# Select Medium (1 -> 15%)
-	hud.set_difficulty_by_index(1)
-	if not is_equal_approx(grid.mine_density, 0.15):
-		print("[FAIL] Medium density expected 0.15, got ", grid.mine_density)
-		hud.free()
-		grid.free()
+	if hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption"):
+		print("[FAIL] HUD TopBar should NOT have DifficultyOption")
+		hud_inst.free()
 		return false
 
-	# Select Hard (2 -> 20%)
-	hud.set_difficulty_by_index(2)
-	if not is_equal_approx(grid.mine_density, 0.20):
-		print("[FAIL] Hard density expected 0.20, got ", grid.mine_density)
-		hud.free()
-		grid.free()
+	if not hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel"):
+		print("[FAIL] HUD TopBar missing ExploredLabel")
+		hud_inst.free()
 		return false
 
-	hud.free()
-	grid.free()
-	print("[PASS] Test 4: Difficulty selection verified")
+	if not hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/FlagLabel"):
+		print("[FAIL] HUD TopBar missing FlagLabel")
+		hud_inst.free()
+		return false
+
+	if not hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/ChunkStatsLabel"):
+		print("[FAIL] HUD TopBar missing ChunkStatsLabel")
+		hud_inst.free()
+		return false
+
+	if not hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/TimeLabel"):
+		print("[FAIL] HUD TopBar missing TimeLabel")
+		hud_inst.free()
+		return false
+
+	if not hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/RestartButton"):
+		print("[FAIL] HUD TopBar missing RestartButton")
+		hud_inst.free()
+		return false
+
+	hud_inst.free()
+	print("[PASS] Test 4: HUD layout & cleanliness verified")
 	return true
 
 func test_game_over_modal() -> bool:

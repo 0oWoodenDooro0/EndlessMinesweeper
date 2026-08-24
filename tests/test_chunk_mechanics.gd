@@ -168,10 +168,12 @@ func test_chunk_lockout_on_mine_hit() -> bool:
 	# Chunk (0, 0) has mine at (1, 1)
 	var mine_pos = Vector2i(1, 1)
 	grid.set_mine_at(mine_pos, true)
+	grid.get_cell(Vector2i(1, 0)).is_revealed = true # Anchor
 
 	# Chunk (1, 0) has safe cell at (4, 0)
 	var safe_other_pos = Vector2i(4, 0)
 	grid.set_mine_at(safe_other_pos, false)
+	grid.get_cell(Vector2i(4, 1)).is_revealed = true # Anchor
 
 	var locked_signal_data = {
 		"received": false,
@@ -291,6 +293,7 @@ func test_surrounding_8_neighbors_clearing_and_revival() -> bool:
 	grid.set_mine_at(Vector2i(1, 0), false)
 	grid.set_mine_at(Vector2i(0, 1), false)
 	grid.set_mine_at(Vector2i(1, 1), false)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 
 	# Trigger lock on (0, 0)
 	grid.reveal_cell(Vector2i(0, 0))
@@ -324,6 +327,7 @@ func test_surrounding_8_neighbors_clearing_and_revival() -> bool:
 		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2), false)
 		grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1), false)
 		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1), false)
+		grid.get_cell(Vector2i(c_pos.x * 2, c_pos.y * 2)).is_revealed = true # Anchor
 
 	# Reveal & clear first 7 neighbors
 	for i in range(7):
@@ -388,6 +392,7 @@ func test_unlocked_mine_converted_to_flag_and_subsequent_clear() -> bool:
 	grid.set_mine_at(Vector2i(1, 0), false)
 	grid.set_mine_at(Vector2i(0, 1), false)
 	grid.set_mine_at(Vector2i(1, 1), false)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 
 	# Trigger lock on (0, 0)
 	grid.reveal_cell(mine_pos)
@@ -402,6 +407,7 @@ func test_unlocked_mine_converted_to_flag_and_subsequent_clear() -> bool:
 			grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2), false)
 			grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1), false)
 			grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1), false)
+			grid.get_cell(Vector2i(c_pos.x * 2, c_pos.y * 2)).is_revealed = true # Anchor
 			grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2))
 			grid.reveal_cell(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1))
 			grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1))
@@ -471,6 +477,7 @@ func test_hud_chunk_statistics_tracking() -> bool:
 	grid.set_mine_at(Vector2i(3, 0), false)
 	grid.set_mine_at(Vector2i(2, 1), false)
 	grid.set_mine_at(Vector2i(3, 1), false)
+	grid.get_cell(Vector2i(2, 0)).is_revealed = true # Anchor
 
 	grid.reveal_cell(Vector2i(3, 0))
 	grid.reveal_cell(Vector2i(2, 1))
@@ -484,6 +491,7 @@ func test_hud_chunk_statistics_tracking() -> bool:
 
 	# Setup chunk (0, 0) with a mine and trigger lock
 	grid.set_mine_at(Vector2i(0, 0), true)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 	grid.reveal_cell(Vector2i(0, 0))
 
 	if hud.locked_chunks_count != 1:
@@ -527,6 +535,7 @@ func test_auto_flag_on_chunk_clear() -> bool:
 	grid.set_mine_at(m2, true)
 	grid.set_mine_at(s1, false)
 	grid.set_mine_at(s2, false)
+	grid.get_cell(Vector2i(0, -1)).is_revealed = true # Anchor (adjacent to (0,0), (1,0), (0,1))
 
 	# Pre-flag m1 manually before clearing to verify manual flag is preserved and not double-counted
 	grid.toggle_flag(m1)
@@ -613,11 +622,13 @@ func test_two_connected_locked_chunks_unlock() -> bool:
 	grid.set_mine_at(Vector2i(1, 0), false)
 	grid.set_mine_at(Vector2i(0, 1), false)
 	grid.set_mine_at(Vector2i(1, 1), false)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 
 	grid.set_mine_at(m1, true)
 	grid.set_mine_at(Vector2i(3, 0), false)
 	grid.set_mine_at(Vector2i(2, 1), false)
 	grid.set_mine_at(Vector2i(3, 1), false)
+	grid.get_cell(Vector2i(2, 1)).is_revealed = true # Anchor
 
 	# Trigger lockouts on both chunks
 	grid.reveal_cell(m0)
@@ -649,6 +660,7 @@ func test_two_connected_locked_chunks_unlock() -> bool:
 		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2), false)
 		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1), false)
 		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1), false)
+		grid.get_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2)).is_revealed = true # Anchor
 
 	# Clear the first 9 perimeter chunks
 	for i in range(9):
@@ -712,6 +724,7 @@ func test_complex_locked_cluster_unlock() -> bool:
 		grid.set_mine_at(Vector2i(cp.x * 2 + 1, cp.y * 2), false)
 		grid.set_mine_at(Vector2i(cp.x * 2, cp.y * 2 + 1), false)
 		grid.set_mine_at(Vector2i(cp.x * 2 + 1, cp.y * 2 + 1), false)
+		grid.get_cell(Vector2i(cp.x * 2, cp.y * 2 + 1)).is_revealed = true # Anchor
 
 	# Trigger lock on all 3 chunks
 	for mp in mines:
@@ -738,6 +751,7 @@ func test_complex_locked_cluster_unlock() -> bool:
 		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2), false)
 		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1), false)
 		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1), false)
+		grid.get_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2)).is_revealed = true # Anchor
 
 	# Clear 11 of 12 perimeter chunks
 	for i in range(11):
@@ -748,26 +762,26 @@ func test_complex_locked_cluster_unlock() -> bool:
 
 		for cp in cluster:
 			if grid.get_chunk(cp).is_locked != true:
-				print("[FAIL] Chunk ", cp, " unlocked before all 12 perimeter chunks were cleared")
+				print("[FAIL] Cluster chunk ", cp, " unlocked prematurely")
 				grid.free()
 				return false
 
-	# Clear the final 12th perimeter chunk
-	var last_p = perimeter_chunks[11]
-	grid.reveal_cell(Vector2i(last_p.x * 2 + 1, last_p.y * 2))
-	grid.reveal_cell(Vector2i(last_p.x * 2, last_p.y * 2 + 1))
-	grid.reveal_cell(Vector2i(last_p.x * 2 + 1, last_p.y * 2 + 1))
+	# Clear the 12th perimeter chunk
+	var last_p_chunk = perimeter_chunks[11]
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2 + 1, last_p_chunk.y * 2))
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2, last_p_chunk.y * 2 + 1))
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2 + 1, last_p_chunk.y * 2 + 1))
 
-	# All 3 chunks in cluster must now be unlocked!
+	# All 3 chunks in cluster should now be unlocked!
 	for cp in cluster:
 		if grid.get_chunk(cp).is_locked:
-			print("[FAIL] Chunk ", cp, " should be unlocked after full perimeter clearance")
+			print("[FAIL] Cluster chunk ", cp, " is still locked")
 			grid.free()
 			return false
 
+	# All mines converted to flags
 	for mp in mines:
-		var cell = grid.get_cell(mp)
-		if not cell.is_flagged or cell.is_revealed:
+		if not grid.get_cell(mp).is_flagged or grid.get_cell(mp).is_revealed:
 			print("[FAIL] Mine at ", mp, " was not converted to flag")
 			grid.free()
 			return false
@@ -787,6 +801,7 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 		for y in range(4):
 			grid.set_mine_at(Vector2i(x, y), false)
 	grid.set_mine_at(Vector2i(0, 0), true)
+	grid.get_cell(Vector2i(-1, 0)).is_revealed = true # Anchor
 
 	var chunk = grid.get_chunk(Vector2i(0, 0))
 
@@ -848,6 +863,7 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 		for y in range(4):
 			test_grid.set_mine_at(Vector2i(x, y), false)
 	test_grid.set_mine_at(Vector2i(0, 0), true) # 1 mine in chunk (0, 0)
+	test_grid.get_cell(Vector2i(-1, 0)).is_revealed = true # Anchor
 	test_grid.set_mine_at(Vector2i(4, 0), false) # safe target in chunk (1, 0)
 	test_grid.set_mine_at(Vector2i(4, 1), true) # mine to flag in chunk (1, 0)
 	test_grid.set_mine_at(Vector2i(2, -1), false)

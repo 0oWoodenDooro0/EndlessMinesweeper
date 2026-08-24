@@ -103,11 +103,13 @@ func test_hud_initial_state() -> bool:
 func test_stats_updating() -> bool:
 	print("[RUN] Test 3: Statistics Updating on Cell Reveal & Flag Change")
 	var grid = GridManager.new()
+	grid.safe_zone_radius = 0
 	var hud = HUD.new()
 	hud.setup_ui_nodes()
 	hud.bind_grid_manager(grid)
 
 	var safe_pos = Vector2i(2, 2)
+	grid.set_mine_at(Vector2i(2, 3), true) # prevent BFS expansion
 	grid.set_mine_at(safe_pos, false)
 
 	# Reveal a cell -> stats and timer should update
@@ -125,8 +127,8 @@ func test_stats_updating() -> bool:
 		grid.free()
 		return false
 
-	# Toggle flag -> flag count should update
-	var flag_pos = Vector2i(4, 4)
+	# Toggle flag on adjacent cell -> flag count should update
+	var flag_pos = Vector2i(2, 1)
 	grid.toggle_flag(flag_pos)
 
 	if hud.flag_count != 1:
@@ -199,6 +201,7 @@ func test_game_over_modal() -> bool:
 
 	var mine_pos = Vector2i(0, 0)
 	grid.set_mine_at(mine_pos, true)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 
 	grid.reveal_cell(mine_pos)
 
@@ -244,6 +247,7 @@ func test_restart_reset() -> bool:
 	grid.set_first_click(Vector2i(100, 100))
 	var mine_pos = Vector2i(0, 0)
 	grid.set_mine_at(mine_pos, true)
+	grid.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 	grid.reveal_cell(mine_pos)
 
 	if not grid.is_game_over or not hud.is_game_over_visible():

@@ -251,6 +251,7 @@ func test_lod_gameplay_integrity() -> bool:
 
 	# Gameplay action in LOD mode
 	var target_cell = Vector2i(5, 5)
+	grid.get_cell(Vector2i(5, 4)).is_revealed = true # Anchor
 	grid.toggle_flag(target_cell)
 	var c_data = grid.get_cell(target_cell)
 	if not c_data.is_flagged:

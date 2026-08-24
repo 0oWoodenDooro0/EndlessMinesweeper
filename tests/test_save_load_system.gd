@@ -102,12 +102,13 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 	grid1.safe_zone_radius = 2
 	grid1.enable_chunk_lockout = true
 
-	grid1.set_first_click(Vector2i(5, 5))
-	grid1.toggle_flag(Vector2i(1, 1))
 	grid1.reveal_cell(Vector2i(5, 5))
+	grid1.get_cell(Vector2i(1, 0)).is_revealed = true # Anchor
+	grid1.toggle_flag(Vector2i(1, 1))
 
 	var mine_pos = Vector2i(0, 0)
 	grid1.set_mine_at(mine_pos, true)
+	grid1.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
 	grid1.reveal_cell(mine_pos)
 
 	var chunk0 = grid1.get_chunk(Vector2i(0, 0))
@@ -292,7 +293,8 @@ func test_auto_save_on_gameplay_actions() -> bool:
 
 	var grid = main.get_node("GridManager") as GridManager
 	grid.chunk_size = Vector2i(4, 4)
-	grid.set_first_click(Vector2i(10, 10))
+	grid.safe_zone_radius = 0
+	grid.set_mine_at(Vector2i(10, 9), true)
 
 	# 1. Action: Reveal cell -> should auto-save
 	grid.reveal_cell(Vector2i(10, 10))
@@ -310,11 +312,11 @@ func test_auto_save_on_gameplay_actions() -> bool:
 		return false
 
 	# 2. Action: Toggle flag -> should auto-save updated flag
-	grid.toggle_flag(Vector2i(-20, -20))
+	grid.toggle_flag(Vector2i(10, 11))
 	var save_data2 = sm.load_data_from_file(test_path)
 	var flag_found = false
 	for cell in save_data2["grid"]["cells"]:
-		if cell["x"] == -20 and cell["y"] == -20 and cell["is_flagged"]:
+		if cell["x"] == 10 and cell["y"] == 11 and cell["is_flagged"]:
 			flag_found = true
 			break
 

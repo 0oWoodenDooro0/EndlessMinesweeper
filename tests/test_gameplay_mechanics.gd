@@ -8,7 +8,7 @@ func _init():
 	print("--- Running Test Suite: Gameplay Mechanics ---")
 	var success = true
 
-	# Test 1: Single Cell Reveal & Flagged Protection
+	# Test 1: Single Cell Reveal & Adjacent Reveal
 	if not test_reveal_single_cell():
 		success = false
 
@@ -32,6 +32,10 @@ func _init():
 	if not test_chord_reveal():
 		success = false
 
+	# Test 7: Adjacency Restrictions (Issue #25)
+	if not test_adjacency_restrictions():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -41,19 +45,23 @@ func _init():
 		quit(1)
 
 func test_reveal_single_cell() -> bool:
-	print("[RUN] Test 1: Single Cell Reveal & Flagged Protection")
+	print("[RUN] Test 1: Single Cell Reveal & Adjacent Reveal")
 	var grid = GridManager.new()
-	grid.set_first_click(Vector2i(100, 100)) # prevent random first-click reset
+	grid.safe_zone_radius = 0 # Only clear the single clicked cell to prevent wide BFS
 	
 	var pos = Vector2i(5, 5)
-	grid.set_mine_at(pos, false)
-	
+	# Surround pos with a mine at (4, 5) so pos has 1 neighbor mine and does not auto-reveal (5, 6)
+	grid.set_mine_at(Vector2i(4, 5), true)
+	grid.set_mine_at(Vector2i(5, 6), false)
+	grid.set_mine_at(Vector2i(4, 6), true) # prevent (5, 6) from auto BFS
+
 	var cell = grid.get_cell(pos)
 	if cell.is_revealed:
 		print("[FAIL] Cell should not be revealed initially")
 		grid.free()
 		return false
 
+	# Initial reveal (first click) should succeed
 	var result = grid.reveal_cell(pos)
 	if not result or not cell.is_revealed:
 		print("[FAIL] Cell was not revealed by reveal_cell()")
@@ -64,6 +72,23 @@ func test_reveal_single_cell() -> bool:
 	var second_result = grid.reveal_cell(pos)
 	if second_result:
 		print("[FAIL] Revealing already revealed cell should return false")
+		grid.free()
+		return false
+
+	# Reveal an adjacent cell (5, 6)
+	var adj_pos = Vector2i(5, 6)
+	var adj_result = grid.reveal_cell(adj_pos)
+	if not adj_result or not grid.get_cell(adj_pos).is_revealed:
+		print("[FAIL] Adjacent cell reveal failed")
+		grid.free()
+		return false
+
+	# Attempt to reveal a distant disconnected cell (50, 50)
+	var distant_pos = Vector2i(50, 50)
+	grid.set_mine_at(distant_pos, false)
+	var distant_result = grid.reveal_cell(distant_pos)
+	if distant_result or grid.get_cell(distant_pos).is_revealed:
+		print("[FAIL] Distant non-adjacent cell reveal should be rejected")
 		grid.free()
 		return false
 
@@ -112,10 +137,15 @@ func test_mine_explosion_game_over() -> bool:
 	print("[RUN] Test 3: Mine Explosion & Game Over Trigger")
 	var grid = GridManager.new()
 	grid.enable_chunk_lockout = false
-	grid.set_first_click(Vector2i(100, 100))
+	grid.safe_zone_radius = 0 # Only clear (0, 1)
 
+	# Setup safe anchor cell at (0, 1) and mine at (0, 0)
+	var anchor_pos = Vector2i(0, 1)
 	var mine_pos = Vector2i(0, 0)
+
 	grid.set_mine_at(mine_pos, true)
+	grid.reveal_cell(anchor_pos) # First click anchor at (0, 1)
+	grid.set_mine_at(mine_pos, true) # Ensure mine_pos is mine
 
 	var signal_data = {
 		"received": false,
@@ -139,7 +169,7 @@ func test_mine_explosion_game_over() -> bool:
 		return false
 
 	# Attempts to reveal other cells during game over should be blocked
-	var other_pos = Vector2i(2, 2)
+	var other_pos = Vector2i(1, 1)
 	grid.set_mine_at(other_pos, false)
 	var reveal_after_game_over = grid.reveal_cell(other_pos)
 	if reveal_after_game_over or grid.get_cell(other_pos).is_revealed:
@@ -154,7 +184,6 @@ func test_mine_explosion_game_over() -> bool:
 func test_bfs_flood_fill() -> bool:
 	print("[RUN] Test 4: BFS Flood Fill Zero-Mine Expansion")
 	var grid = GridManager.new()
-	grid.set_first_click(Vector2i(100, 100))
 
 	# Clear a 5x5 region from (-2,-2) to (2,2) with no mines
 	for x in range(-2, 3):
@@ -165,10 +194,7 @@ func test_bfs_flood_fill() -> bool:
 	for y in range(-3, 4):
 		grid.set_mine_at(Vector2i(3, y), true)
 
-	# Place a flag at Vector2i(0, 1) within zero region to test flag protection in BFS
-	grid.toggle_flag(Vector2i(0, 1))
-
-	# Reveal origin Vector2i(0, 0) which has 0 neighbor mines
+	# First reveal at (0, 0)
 	grid.reveal_cell(Vector2i(0, 0))
 
 	# Vector2i(0, 0) should be revealed
@@ -183,13 +209,6 @@ func test_bfs_flood_fill() -> bool:
 		grid.free()
 		return false
 
-	# Flagged cell (0, 1) should remain unrevealed and flagged
-	var flagged_cell = grid.get_cell(Vector2i(0, 1))
-	if flagged_cell.is_revealed or not flagged_cell.is_flagged:
-		print("[FAIL] Flagged cell was incorrectly revealed by BFS expansion")
-		grid.free()
-		return false
-
 	# Mines at x=3 should NOT be revealed
 	if grid.get_cell(Vector2i(3, 0)).is_revealed:
 		print("[FAIL] Mine cell at (3, 0) was incorrectly revealed by BFS expansion")
@@ -201,49 +220,66 @@ func test_bfs_flood_fill() -> bool:
 	return true
 
 func test_flag_toggling() -> bool:
-	print("[RUN] Test 5: Flag Toggling Logic")
+	print("[RUN] Test 5: Flag Toggling Logic & Adjacency")
 	var grid = GridManager.new()
-	grid.set_first_click(Vector2i(100, 100))
+	grid.safe_zone_radius = 0
 
-	var pos = Vector2i(1, 1)
-	grid.set_mine_at(pos, false)
-	var cell = grid.get_cell(pos)
+	# 1. Flagging before first click should be blocked
+	grid.toggle_flag(Vector2i(1, 1))
+	if grid.get_cell(Vector2i(1, 1)).is_flagged:
+		print("[FAIL] Flagging prior to first reveal should be prohibited")
+		grid.free()
+		return false
 
+	# 2. First reveal at (0, 0)
+	grid.set_mine_at(Vector2i(0, 0), false)
+	# Surround (0, 0) with a mine at (1, 0) to avoid auto-revealing all neighbors via BFS
+	grid.set_mine_at(Vector2i(1, 0), true)
+	grid.reveal_cell(Vector2i(0, 0))
+
+	# 3. Flagging a distant non-adjacent cell (10, 10) should be blocked
+	grid.toggle_flag(Vector2i(10, 10))
+	if grid.get_cell(Vector2i(10, 10)).is_flagged:
+		print("[FAIL] Flagging distant non-adjacent cell should be prohibited")
+		grid.free()
+		return false
+
+	# 4. Flagging an adjacent cell (0, 1) should succeed
+	var adj_pos = Vector2i(0, 1)
 	var flag_signal_data = {
 		"received": false,
 		"state": false
 	}
 	grid.connect("cell_flag_changed", func(p: Vector2i, is_flagged: bool):
-		if p == pos:
+		if p == adj_pos:
 			flag_signal_data["received"] = true
 			flag_signal_data["state"] = is_flagged
 	)
 
-	# Toggle ON
-	grid.toggle_flag(pos)
-	if not cell.is_flagged or not flag_signal_data["received"] or not flag_signal_data["state"]:
-		print("[FAIL] Cell flag not enabled or signal not emitted")
+	grid.toggle_flag(adj_pos)
+	var adj_cell = grid.get_cell(adj_pos)
+	if not adj_cell.is_flagged or not flag_signal_data["received"] or not flag_signal_data["state"]:
+		print("[FAIL] Adjacent cell flag not enabled or signal not emitted")
 		grid.free()
 		return false
 
 	# Try to reveal flagged cell - should fail and remain unrevealed
-	var reveal_result = grid.reveal_cell(pos)
-	if reveal_result or cell.is_revealed:
+	var reveal_result = grid.reveal_cell(adj_pos)
+	if reveal_result or adj_cell.is_revealed:
 		print("[FAIL] Flagged cell was revealed by reveal_cell")
 		grid.free()
 		return false
 
 	# Toggle OFF
-	grid.toggle_flag(pos)
-	if cell.is_flagged or flag_signal_data["state"] != false:
+	grid.toggle_flag(adj_pos)
+	if adj_cell.is_flagged or flag_signal_data["state"] != false:
 		print("[FAIL] Cell flag not disabled by second toggle")
 		grid.free()
 		return false
 
-	# Cannot flag an already revealed cell
-	grid.reveal_cell(pos)
-	grid.toggle_flag(pos)
-	if cell.is_flagged:
+	# Cannot flag an already revealed cell (0, 0)
+	grid.toggle_flag(Vector2i(0, 0))
+	if grid.get_cell(Vector2i(0, 0)).is_flagged:
 		print("[FAIL] Revealed cell was flagged")
 		grid.free()
 		return false
@@ -255,7 +291,7 @@ func test_flag_toggling() -> bool:
 func test_chord_reveal() -> bool:
 	print("[RUN] Test 6: Chord Reveal Logic")
 	var grid = GridManager.new()
-	grid.set_first_click(Vector2i(100, 100))
+	grid.safe_zone_radius = 0
 
 	# Setup target cell (0, 0) with exactly 1 mine neighbor at (1, 0)
 	var target = Vector2i(0, 0)
@@ -279,7 +315,7 @@ func test_chord_reveal() -> bool:
 		grid.free()
 		return false
 
-	# Case 2: Flag the mine cell (1, 0)
+	# Case 2: Flag the mine cell (1, 0) (valid because (1, 0) is adjacent to revealed (0, 0))
 	grid.toggle_flag(mine_pos)
 
 	# Case 3: Chord with 1 flag (neighbor flags = 1, neighbor mines = 1 -> match!)
@@ -310,3 +346,102 @@ func test_chord_reveal() -> bool:
 	grid.free()
 	print("[PASS] Test 6: Chord reveal logic verified")
 	return true
+
+func test_adjacency_restrictions() -> bool:
+	print("[RUN] Test 7: Adjacency Restrictions for Reveals and Flags (Issue #25)")
+	var grid = GridManager.new()
+	grid.safe_zone_radius = 0
+
+	# 1. has_revealed_neighbor helper validation
+	var origin = Vector2i(20, 20)
+	if grid.has_revealed_neighbor(origin):
+		print("[FAIL] has_revealed_neighbor returned true when grid is empty")
+		grid.free()
+		return false
+
+	# 2. Before first click, all flag attempts must be blocked
+	grid.toggle_flag(Vector2i(10, 10))
+	grid.toggle_flag(Vector2i(0, 0))
+	if grid.get_cell(Vector2i(10, 10)).is_flagged or grid.get_cell(Vector2i(0, 0)).is_flagged:
+		print("[FAIL] Flagging prior to first reveal must be blocked")
+		grid.free()
+		return false
+
+	# 3. First click anywhere is allowed
+	var first_click = Vector2i(5, 5)
+	# Surround (5, 5) with a mine so it doesn't auto-expand all 8 neighbors immediately
+	grid.set_mine_at(Vector2i(6, 5), true)
+	var res1 = grid.reveal_cell(first_click)
+	if not res1 or not grid.get_cell(first_click).is_revealed or not grid.has_first_clicked:
+		print("[FAIL] First click reveal failed")
+		grid.free()
+		return false
+
+	# 4. Distant reveals & flags are blocked
+	var distant = Vector2i(100, 100)
+	var distant_reveal = grid.reveal_cell(distant)
+	if distant_reveal or grid.get_cell(distant).is_revealed:
+		print("[FAIL] Distant reveal was allowed")
+		grid.free()
+		return false
+
+	grid.toggle_flag(distant)
+	if grid.get_cell(distant).is_flagged:
+		print("[FAIL] Distant flag was allowed")
+		grid.free()
+		return false
+
+	# 5. All 8-directional neighbors of (5, 5) satisfy adjacency
+	var offsets = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+		Vector2i(-1,  0),                  Vector2i(1,  0),
+		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1)
+	]
+
+	for offset in offsets:
+		var neighbor = first_click + offset
+		if not grid.has_revealed_neighbor(neighbor):
+			print("[FAIL] has_revealed_neighbor returned false for 8-way neighbor: ", neighbor)
+			grid.free()
+			return false
+
+	# 6. Flag and unflag an adjacent neighbor
+	var flag_target = first_click + Vector2i(0, 1)
+	grid.toggle_flag(flag_target)
+	if not grid.get_cell(flag_target).is_flagged:
+		print("[FAIL] Flagging 8-way neighbor failed")
+		grid.free()
+		return false
+	grid.toggle_flag(flag_target)
+	if grid.get_cell(flag_target).is_flagged:
+		print("[FAIL] Unflagging 8-way neighbor failed")
+		grid.free()
+		return false
+
+	# 7. Reveal an adjacent safe neighbor
+	var safe_neighbor = first_click + Vector2i(-1, 0)
+	grid.set_mine_at(safe_neighbor, false)
+	grid.set_mine_at(safe_neighbor + Vector2i(-1, 0), true) # prevent runaway BFS
+	var reveal_adj = grid.reveal_cell(safe_neighbor)
+	if not reveal_adj or not grid.get_cell(safe_neighbor).is_revealed:
+		print("[FAIL] Revealing 8-way adjacent safe cell failed")
+		grid.free()
+		return false
+
+	# 8. Frontier expansion: cell adjacent to newly revealed safe_neighbor (e.g. safe_neighbor + (-1, 0)) is now playable
+	var next_frontier = safe_neighbor + Vector2i(-1, 0)
+	if not grid.has_revealed_neighbor(next_frontier):
+		print("[FAIL] Frontier neighbor should have revealed neighbor after adjacent reveal")
+		grid.free()
+		return false
+
+	grid.toggle_flag(next_frontier)
+	if not grid.get_cell(next_frontier).is_flagged:
+		print("[FAIL] Flagging on expanded frontier failed")
+		grid.free()
+		return false
+
+	grid.free()
+	print("[PASS] Test 7: Adjacency Restrictions verified")
+	return true
+

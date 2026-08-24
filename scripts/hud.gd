@@ -22,8 +22,6 @@ var flag_label: Label
 var chunk_stats_label: Label
 var time_label: Label
 var difficulty_option: OptionButton
-var save_button: Button
-var load_button: Button
 var restart_button: Button
 
 var game_over_modal: Control
@@ -63,16 +61,6 @@ func setup_ui_nodes() -> void:
 	elif difficulty_option == null:
 		difficulty_option = OptionButton.new()
 
-	if has_node("TopBar/MarginContainer/HBoxContainer/SaveButton"):
-		save_button = get_node("TopBar/MarginContainer/HBoxContainer/SaveButton") as Button
-	elif save_button == null:
-		save_button = Button.new()
-
-	if has_node("TopBar/MarginContainer/HBoxContainer/LoadButton"):
-		load_button = get_node("TopBar/MarginContainer/HBoxContainer/LoadButton") as Button
-	elif load_button == null:
-		load_button = Button.new()
-
 	if has_node("TopBar/MarginContainer/HBoxContainer/RestartButton"):
 		restart_button = get_node("TopBar/MarginContainer/HBoxContainer/RestartButton") as Button
 	elif restart_button == null:
@@ -103,10 +91,6 @@ func setup_ui_nodes() -> void:
 	# Wire UI events
 	if not difficulty_option.is_connected("item_selected", Callable(self, "set_difficulty_by_index")):
 		difficulty_option.connect("item_selected", Callable(self, "set_difficulty_by_index"))
-	if not save_button.is_connected("pressed", Callable(self, "on_save_pressed")):
-		save_button.connect("pressed", Callable(self, "on_save_pressed"))
-	if not load_button.is_connected("pressed", Callable(self, "on_load_pressed")):
-		load_button.connect("pressed", Callable(self, "on_load_pressed"))
 	if not restart_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
 		restart_button.connect("pressed", Callable(self, "on_restart_pressed"))
 	if not play_again_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
@@ -255,35 +239,4 @@ func deserialize(data: Dictionary) -> bool:
 
 	_update_labels()
 	return true
-
-func _auto_find_camera_controller() -> CameraController:
-	if camera_controller != null:
-		return camera_controller
-	if get_parent() != null:
-		if get_parent().has_node("Camera2D"):
-			var cam = get_parent().get_node("Camera2D")
-			if cam is CameraController:
-				return cam as CameraController
-		for child in get_parent().get_children():
-			if child is CameraController:
-				return child as CameraController
-	return null
-
-func on_save_pressed() -> void:
-	if grid_manager == null:
-		_auto_find_grid_manager()
-	var cam = _auto_find_camera_controller()
-	var sm = SaveManager.new()
-	var success = sm.save_game_state(grid_manager, self, cam)
-	if success:
-		print("Game saved successfully!")
-
-func on_load_pressed() -> void:
-	if grid_manager == null:
-		_auto_find_grid_manager()
-	var cam = _auto_find_camera_controller()
-	var sm = SaveManager.new()
-	var success = sm.load_game_state(grid_manager, self, cam)
-	if success:
-		print("Game loaded successfully!")
 

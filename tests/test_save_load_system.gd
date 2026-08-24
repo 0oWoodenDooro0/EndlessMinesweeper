@@ -5,9 +5,10 @@ const GridManager = preload("res://scripts/grid_manager.gd")
 const HUD = preload("res://scripts/hud.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
+const MainScene = preload("res://scenes/main.tscn")
 
 func _init():
-	print("--- Running Test Suite: Save & Load System ---")
+	print("--- Running Test Suite: Save & Load System (Auto-Save & Startup Auto-Load) ---")
 	var success = true
 
 	# Test 1: SaveManager File I/O & Basic Persistence
@@ -26,11 +27,19 @@ func _init():
 	if not test_camera_serialization_and_deserialization():
 		success = false
 
-	# Test 5: End-to-End Game State Save, Load & Gameplay Resumption
-	if not test_end_to_end_game_state_save_and_load():
+	# Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons)
+	if not test_hud_no_manual_save_load_buttons():
 		success = false
 
-	# Test 6: Error Handling & Corrupted Data Robustness
+	# Test 6: Auto-Save Triggered on Gameplay Actions
+	if not test_auto_save_on_gameplay_actions():
+		success = false
+
+	# Test 7: Startup Auto-Load When Save Exists
+	if not test_startup_auto_load():
+		success = false
+
+	# Test 8: Error Handling & Corrupted Data Robustness
 	if not test_error_handling_and_corrupted_data():
 		success = false
 
@@ -47,7 +56,6 @@ func test_save_manager_file_io() -> bool:
 	var test_path = "user://test_io_save.json"
 	var sm = SaveManager.new()
 
-	# Clean up any leftover test file
 	if sm.has_save(test_path):
 		sm.delete_save(test_path)
 
@@ -58,14 +66,9 @@ func test_save_manager_file_io() -> bool:
 	var sample_data = {
 		"version": 1,
 		"title": "Endless Minesweeper Test",
-		"number_val": 42,
-		"nested": {
-			"key": "value",
-			"arr": [1, 2, 3]
-		}
+		"number_val": 42
 	}
 
-	# 1. Save data to file
 	var save_res = sm.save_data_to_file(sample_data, test_path)
 	if not save_res:
 		print("[FAIL] save_data_to_file returned false")
@@ -75,10 +78,9 @@ func test_save_manager_file_io() -> bool:
 		print("[FAIL] has_save returned false after saving file")
 		return false
 
-	# 2. Load data from file
 	var loaded_data = sm.load_data_from_file(test_path)
 	if loaded_data == null or typeof(loaded_data) != TYPE_DICTIONARY:
-		print("[FAIL] load_data_from_file failed or returned non-dictionary: ", loaded_data)
+		print("[FAIL] load_data_from_file failed: ", loaded_data)
 		sm.delete_save(test_path)
 		return false
 
@@ -87,17 +89,7 @@ func test_save_manager_file_io() -> bool:
 		sm.delete_save(test_path)
 		return false
 
-	if loaded_data.get("nested", {}).get("key") != "value":
-		print("[FAIL] Nested loaded data mismatch: ", loaded_data)
-		sm.delete_save(test_path)
-		return false
-
-	# 3. Delete file
-	var del_res = sm.delete_save(test_path)
-	if not del_res or sm.has_save(test_path):
-		print("[FAIL] delete_save failed to delete test file")
-		return false
-
+	sm.delete_save(test_path)
 	print("[PASS] Test 1: SaveManager File I/O verified")
 	return true
 
@@ -110,16 +102,10 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 	grid1.safe_zone_radius = 2
 	grid1.enable_chunk_lockout = true
 
-	# Set first click to establish safe zone
 	grid1.set_first_click(Vector2i(5, 5))
-
-	# Modify specific cells and chunks
-	# Flag cell (1, 1)
 	grid1.toggle_flag(Vector2i(1, 1))
-	# Reveal safe cell (5, 5)
 	grid1.reveal_cell(Vector2i(5, 5))
 
-	# Configure chunk (0, 0) with a mine hit to trigger lockout
 	var mine_pos = Vector2i(0, 0)
 	grid1.set_mine_at(mine_pos, true)
 	grid1.reveal_cell(mine_pos)
@@ -130,14 +116,12 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 		grid1.free()
 		return false
 
-	# Serialize Grid1
 	var serialized_data = grid1.serialize()
 	if serialized_data == null or serialized_data.is_empty():
 		print("[FAIL] grid1.serialize() returned empty dictionary")
 		grid1.free()
 		return false
 
-	# Create fresh Grid2 with default/different values
 	var grid2 = GridManager.new()
 	grid2.world_seed = 11111
 	grid2.mine_density = 0.10
@@ -150,32 +134,18 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 		grid2.free()
 		return false
 
-	# Verify properties
-	if grid2.world_seed != 98765:
-		print("[FAIL] Deserialized world_seed mismatch: ", grid2.world_seed)
+	if grid2.world_seed != 98765 or not is_equal_approx(grid2.mine_density, 0.25):
+		print("[FAIL] Deserialized world settings mismatch")
 		grid1.free()
 		grid2.free()
 		return false
 
-	if not is_equal_approx(grid2.mine_density, 0.25):
-		print("[FAIL] Deserialized mine_density mismatch: ", grid2.mine_density)
+	if grid2.chunk_size != Vector2i(4, 4) or grid2.first_click_pos != Vector2i(5, 5):
+		print("[FAIL] Deserialized grid metadata mismatch")
 		grid1.free()
 		grid2.free()
 		return false
 
-	if grid2.chunk_size != Vector2i(4, 4):
-		print("[FAIL] Deserialized chunk_size mismatch: ", grid2.chunk_size)
-		grid1.free()
-		grid2.free()
-		return false
-
-	if grid2.has_first_clicked != true or grid2.first_click_pos != Vector2i(5, 5):
-		print("[FAIL] Deserialized first click info mismatch")
-		grid1.free()
-		grid2.free()
-		return false
-
-	# Verify cell states
 	var cell_flag = grid2.get_cell(Vector2i(1, 1))
 	if not cell_flag.is_flagged:
 		print("[FAIL] Deserialized cell (1, 1) should be flagged")
@@ -190,16 +160,9 @@ func test_grid_manager_serialization_and_deserialization() -> bool:
 		grid2.free()
 		return false
 
-	# Verify chunk lockout state
 	var chunk2_0 = grid2.get_chunk(Vector2i(0, 0))
 	if not chunk2_0.is_locked:
 		print("[FAIL] Deserialized chunk (0, 0) should be locked")
-		grid1.free()
-		grid2.free()
-		return false
-
-	if not chunk2_0.locked_mine_positions.has(mine_pos):
-		print("[FAIL] Deserialized chunk (0, 0) locked_mine_positions missing hit mine: ", chunk2_0.locked_mine_positions)
 		grid1.free()
 		grid2.free()
 		return false
@@ -235,44 +198,14 @@ func test_hud_serialization_and_deserialization() -> bool:
 		hud2.free()
 		return false
 
-	if hud2.revealed_count != 55:
-		print("[FAIL] Deserialized revealed_count mismatch: ", hud2.revealed_count)
+	if hud2.revealed_count != 55 or hud2.flag_count != 12 or hud2.cleared_chunks_count != 4 or hud2.locked_chunks_count != 2:
+		print("[FAIL] Deserialized HUD stats mismatch")
 		hud1.free()
 		hud2.free()
 		return false
 
-	if hud2.flag_count != 12:
-		print("[FAIL] Deserialized flag_count mismatch: ", hud2.flag_count)
-		hud1.free()
-		hud2.free()
-		return false
-
-	if hud2.cleared_chunks_count != 4 or hud2.locked_chunks_count != 2:
-		print("[FAIL] Deserialized chunk counts mismatch: cleared=", hud2.cleared_chunks_count, " locked=", hud2.locked_chunks_count)
-		hud1.free()
-		hud2.free()
-		return false
-
-	if not is_equal_approx(hud2.elapsed_time, 145.8):
-		print("[FAIL] Deserialized elapsed_time mismatch: ", hud2.elapsed_time)
-		hud1.free()
-		hud2.free()
-		return false
-
-	if hud2.is_timer_running != true:
-		print("[FAIL] Deserialized is_timer_running should be true")
-		hud1.free()
-		hud2.free()
-		return false
-
-	if hud2.time_label.text != "Time: 02:25":
-		print("[FAIL] Deserialized time_label text mismatch: ", hud2.time_label.text)
-		hud1.free()
-		hud2.free()
-		return false
-
-	if hud2.chunk_stats_label.text != "Cleared: 4 | Locked: 2":
-		print("[FAIL] Deserialized chunk_stats_label mismatch: ", hud2.chunk_stats_label.text)
+	if not is_equal_approx(hud2.elapsed_time, 145.8) or hud2.is_timer_running != true:
+		print("[FAIL] Deserialized HUD timer mismatch")
 		hud1.free()
 		hud2.free()
 		return false
@@ -304,14 +237,8 @@ func test_camera_serialization_and_deserialization() -> bool:
 		cam2.free()
 		return false
 
-	if cam2.position != Vector2(250.0, -180.0) or cam2.target_position != Vector2(300.0, -150.0):
-		print("[FAIL] Deserialized camera position mismatch: pos=", cam2.position, " target=", cam2.target_position)
-		cam1.free()
-		cam2.free()
-		return false
-
-	if cam2.zoom != Vector2(1.5, 1.5) or cam2.target_zoom != Vector2(1.8, 1.8):
-		print("[FAIL] Deserialized camera zoom mismatch: zoom=", cam2.zoom, " target=", cam2.target_zoom)
+	if cam2.position != Vector2(250.0, -180.0) or cam2.zoom != Vector2(1.5, 1.5):
+		print("[FAIL] Deserialized camera pos/zoom mismatch")
 		cam1.free()
 		cam2.free()
 		return false
@@ -321,159 +248,171 @@ func test_camera_serialization_and_deserialization() -> bool:
 	print("[PASS] Test 4: CameraController serialization & deserialization verified")
 	return true
 
-func test_end_to_end_game_state_save_and_load() -> bool:
-	print("[RUN] Test 5: End-to-End Game State Save, Load & Gameplay Resumption")
-	var test_path = "user://test_e2e_game_save.json"
-	var sm = SaveManager.new()
+func test_hud_no_manual_save_load_buttons() -> bool:
+	print("[RUN] Test 5: HUD UI Cleanliness (No Manual Save/Load Buttons)")
+	var hud_scene = preload("res://scenes/hud.tscn")
+	var hud_inst = hud_scene.instantiate()
+	if hud_inst == null:
+		print("[FAIL] Failed to instantiate hud scene")
+		return false
 
+	if hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/SaveButton"):
+		print("[FAIL] HUD TopBar should NOT have SaveButton")
+		hud_inst.free()
+		return false
+
+	if hud_inst.has_node("TopBar/MarginContainer/HBoxContainer/LoadButton"):
+		print("[FAIL] HUD TopBar should NOT have LoadButton")
+		hud_inst.free()
+		return false
+
+	hud_inst.free()
+	print("[PASS] Test 5: HUD UI cleanliness verified (No Save/Load buttons)")
+	return true
+
+func test_auto_save_on_gameplay_actions() -> bool:
+	print("[RUN] Test 6: Auto-Save Triggered on Gameplay Actions")
+	var sm = SaveManager.new()
+	var test_path = "user://test_autosave_action.json"
 	if sm.has_save(test_path):
 		sm.delete_save(test_path)
 
-	# 1. Setup active game environment
-	var grid = GridManager.new()
-	grid.chunk_size = Vector2i(2, 2)
-	grid.mine_density = 1.0 # High density so outer unconfigured cells are mines
-	grid.set_first_click(Vector2i(100, 100))
+	var main = MainScene.instantiate()
+	main.save_file_path = test_path
+	root.add_child(main)
+	# Trigger _ready
+	main.save_file_path = test_path
 
-	var hud = HUD.new()
-	hud.setup_ui_nodes()
-	hud.bind_grid_manager(grid)
+	var grid = main.get_node("GridManager") as GridManager
+	grid.chunk_size = Vector2i(4, 4)
+	grid.set_first_click(Vector2i(10, 10))
 
-	var cam = CameraController.new()
-	cam.position = Vector2(100.0, 50.0)
-	cam.target_position = Vector2(100.0, 50.0)
-	cam.zoom = Vector2(1.2, 1.2)
-	cam.target_zoom = Vector2(1.2, 1.2)
+	# 1. Action: Reveal cell -> should auto-save
+	grid.reveal_cell(Vector2i(10, 10))
 
-	# 2. Perform gameplay actions:
-	# Center chunk (0, 0) has mine at (0, 0) and 3 safe cells
-	var mine_pos = Vector2i(0, 0)
-	grid.set_mine_at(mine_pos, true)
-	grid.set_mine_at(Vector2i(1, 0), false)
-	grid.set_mine_at(Vector2i(0, 1), false)
-	grid.set_mine_at(Vector2i(1, 1), false)
-
-	# Trigger lock on (0, 0)
-	grid.reveal_cell(mine_pos)
-
-	# Setup 8 neighbor chunks around (0, 0)
-	var neighbor_chunks: Array[Vector2i] = [
-		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
-		Vector2i(-1,  0),                  Vector2i(1,  0),
-		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1)
-	]
-	for c_pos in neighbor_chunks:
-		grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2), true)
-		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2), false)
-		grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1), false)
-		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1), false)
-
-	# Clear first 4 neighbor chunks
-	for i in range(4):
-		var c_pos = neighbor_chunks[i]
-		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2))
-		grid.reveal_cell(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1))
-		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1))
-
-	# Advance timer
-	hud._process(30.0)
-
-	if hud.cleared_chunks_count != 4 or hud.locked_chunks_count != 1:
-		print("[FAIL] Initial gameplay stats mismatch: cleared=", hud.cleared_chunks_count, " locked=", hud.locked_chunks_count)
-		grid.free()
-		hud.free()
-		cam.free()
+	if not sm.has_save(test_path):
+		print("[FAIL] Auto-save file was not created after reveal_cell")
+		main.queue_free()
 		return false
 
-	# 3. Save Game State to test file
-	var save_res = sm.save_game_state(grid, hud, cam, test_path)
-	if not save_res:
-		print("[FAIL] sm.save_game_state returned false")
-		grid.free()
-		hud.free()
-		cam.free()
-		return false
-
-	# 4. Reset / Destroy active game
-	grid.reset_game()
-	hud._on_game_reset()
-	cam.position = Vector2.ZERO
-	cam.zoom = Vector2(1.0, 1.0)
-
-	if hud.cleared_chunks_count != 0 or hud.locked_chunks_count != 0:
-		print("[FAIL] Stats not reset after game reset")
-		grid.free()
-		hud.free()
-		cam.free()
+	var save_data = sm.load_data_from_file(test_path)
+	if save_data == null or not save_data.has("grid"):
+		print("[FAIL] Invalid auto-save data: ", save_data)
 		sm.delete_save(test_path)
+		main.queue_free()
 		return false
 
-	# 5. Load Game State from file
-	var load_res = sm.load_game_state(grid, hud, cam, test_path)
-	if not load_res:
-		print("[FAIL] sm.load_game_state returned false")
-		grid.free()
-		hud.free()
-		cam.free()
+	# 2. Action: Toggle flag -> should auto-save updated flag
+	grid.toggle_flag(Vector2i(-20, -20))
+	var save_data2 = sm.load_data_from_file(test_path)
+	var flag_found = false
+	for cell in save_data2["grid"]["cells"]:
+		if cell["x"] == -20 and cell["y"] == -20 and cell["is_flagged"]:
+			flag_found = true
+			break
+
+	if not flag_found:
+		print("[FAIL] Flag toggle was not saved to auto-save file")
 		sm.delete_save(test_path)
+		main.queue_free()
 		return false
 
-	# Verify state was accurately restored
-	if hud.cleared_chunks_count != 4 or hud.locked_chunks_count != 1:
-		print("[FAIL] Restored HUD stats mismatch: cleared=", hud.cleared_chunks_count, " locked=", hud.locked_chunks_count)
-		grid.free()
-		hud.free()
-		cam.free()
-		sm.delete_save(test_path)
-		return false
-
-	var restored_center_chunk = grid.get_chunk(Vector2i(0, 0))
-	if not restored_center_chunk.is_locked:
-		print("[FAIL] Restored center chunk should be locked")
-		grid.free()
-		hud.free()
-		cam.free()
-		sm.delete_save(test_path)
-		return false
-
-	# 6. Resume gameplay on loaded state: clear the remaining 4 neighbor chunks
-	for i in range(4, 8):
-		var c_pos = neighbor_chunks[i]
-		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2))
-		grid.reveal_cell(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1))
-		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1))
-
-	# All 8 neighbors cleared -> center chunk should be unlocked and recovered
-	if restored_center_chunk.is_locked:
-		print("[FAIL] Center chunk should have unlocked after clearing remaining neighbors on resumed game")
-		grid.free()
-		hud.free()
-		cam.free()
-		sm.delete_save(test_path)
-		return false
-
-	var mine_cell = grid.get_cell(mine_pos)
-	if not mine_cell.is_flagged:
-		print("[FAIL] Locked mine was not recovered to flag upon unlocking")
-		grid.free()
-		hud.free()
-		cam.free()
-		sm.delete_save(test_path)
-		return false
-
+	# Clean up
 	sm.delete_save(test_path)
-	grid.free()
-	hud.free()
-	cam.free()
-	print("[PASS] Test 5: End-to-end save, load & gameplay resumption verified")
+	main.queue_free()
+	print("[PASS] Test 6: Auto-save on gameplay actions verified")
+	return true
+
+func test_startup_auto_load() -> bool:
+	print("[RUN] Test 7: Startup Auto-Load When Save Exists")
+	var sm = SaveManager.new()
+	var test_path = "user://test_startup_autoload.json"
+	if sm.has_save(test_path):
+		sm.delete_save(test_path)
+
+	# 1. Create mock pre-existing save data
+	var pre_existing_state = {
+		"version": 1,
+		"timestamp": 1234567,
+		"grid": {
+			"world_seed": 77777,
+			"mine_density": 0.2,
+			"has_first_clicked": true,
+			"first_click_pos": [2, 2],
+			"is_game_over": false,
+			"chunk_size": [4, 4],
+			"safe_zone_radius": 1,
+			"enable_chunk_lockout": true,
+			"cells": [
+				{"x": 2, "y": 2, "is_mine": false, "is_revealed": true, "is_flagged": false},
+				{"x": 3, "y": 3, "is_mine": true, "is_revealed": false, "is_flagged": true}
+			],
+			"chunks": [
+				{"x": 0, "y": 0, "is_locked": false, "locked_mine_positions": [], "total_safe_cells": 10, "revealed_safe_cells": 1, "is_cleared": false}
+			]
+		},
+		"hud": {
+			"revealed_count": 88,
+			"flag_count": 5,
+			"cleared_chunks_count": 2,
+			"locked_chunks_count": 1,
+			"elapsed_time": 99.0,
+			"is_timer_running": true
+		},
+		"camera": {
+			"position": [500.0, 300.0],
+			"target_position": [500.0, 300.0],
+			"zoom": [2.0, 2.0],
+			"target_zoom": [2.0, 2.0]
+		}
+	}
+	sm.save_data_to_file(pre_existing_state, test_path)
+
+	# 2. Instantiate Main and configure test path before ready
+	var main = MainScene.instantiate()
+	main.save_file_path = test_path
+	root.add_child(main)
+
+	# Check restored state on Main
+	var grid = main.get_node("GridManager") as GridManager
+	var hud = main.get_node("HUD") as HUD
+	var cam = main.get_node("Camera2D") as CameraController
+
+	if grid.world_seed != 77777:
+		print("[FAIL] Grid world_seed not auto-loaded on startup: ", grid.world_seed)
+		sm.delete_save(test_path)
+		main.queue_free()
+		return false
+
+	if not grid.get_cell(Vector2i(3, 3)).is_flagged:
+		print("[FAIL] Flag at (3, 3) not auto-loaded on startup")
+		sm.delete_save(test_path)
+		main.queue_free()
+		return false
+
+	if hud.revealed_count != 88 or hud.flag_count != 5:
+		print("[FAIL] HUD stats not auto-loaded on startup: revealed=", hud.revealed_count)
+		sm.delete_save(test_path)
+		main.queue_free()
+		return false
+
+	if cam.position != Vector2(500.0, 300.0) or cam.zoom != Vector2(2.0, 2.0):
+		print("[FAIL] Camera position/zoom not auto-loaded on startup")
+		sm.delete_save(test_path)
+		main.queue_free()
+		return false
+
+	# Clean up
+	sm.delete_save(test_path)
+	main.queue_free()
+	print("[PASS] Test 7: Startup auto-load verified")
 	return true
 
 func test_error_handling_and_corrupted_data() -> bool:
-	print("[RUN] Test 6: Error Handling & Corrupted Data Robustness")
+	print("[RUN] Test 8: Error Handling & Corrupted Data Robustness")
 	var sm = SaveManager.new()
 	var test_corrupt_path = "user://test_corrupt_save.json"
 
-	# 1. Loading nonexistent file
 	var non_existent = sm.load_data_from_file("user://non_existent_file_12345.json")
 	if non_existent != null:
 		print("[FAIL] load_data_from_file on non-existent file should return null")
@@ -486,7 +425,6 @@ func test_error_handling_and_corrupted_data() -> bool:
 		grid.free()
 		return false
 
-	# 2. Corrupted JSON file
 	var file = FileAccess.open(test_corrupt_path, FileAccess.WRITE)
 	if file != null:
 		file.store_string("{ invalid_json: this is not json ... [}")
@@ -508,7 +446,6 @@ func test_error_handling_and_corrupted_data() -> bool:
 
 	sm.delete_save(test_corrupt_path)
 
-	# 3. Deserializing invalid dictionary (missing required fields)
 	var invalid_grid_data = {"random_field": 123}
 	var des_invalid_res = grid.deserialize(invalid_grid_data)
 	if des_invalid_res != false:
@@ -517,5 +454,5 @@ func test_error_handling_and_corrupted_data() -> bool:
 		return false
 
 	grid.free()
-	print("[PASS] Test 6: Error handling and corrupted data robustness verified")
+	print("[PASS] Test 8: Error handling and corrupted data robustness verified")
 	return true

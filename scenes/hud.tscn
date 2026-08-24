@@ -45,14 +45,6 @@ size_flags_horizontal = 3
 [node name="DifficultyOption" type="OptionButton" parent="TopBar/MarginContainer/HBoxContainer"]
 layout_mode = 2
 
-[node name="SaveButton" type="Button" parent="TopBar/MarginContainer/HBoxContainer"]
-layout_mode = 2
-text = "Save"
-
-[node name="LoadButton" type="Button" parent="TopBar/MarginContainer/HBoxContainer"]
-layout_mode = 2
-text = "Load"
-
 [node name="RestartButton" type="Button" parent="TopBar/MarginContainer/HBoxContainer"]
 layout_mode = 2
 text = "Restart"

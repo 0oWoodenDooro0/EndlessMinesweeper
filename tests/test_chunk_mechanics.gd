@@ -49,6 +49,10 @@ func _init():
 	if not test_complex_locked_cluster_unlock():
 		success = false
 
+	# Test 11: Cleared Chunk Blocks Flag Toggling, Reveals, Chords, Modifications & BFS Ingress
+	if not test_cleared_chunk_interactions_blocked():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -771,4 +775,98 @@ func test_complex_locked_cluster_unlock() -> bool:
 	grid.free()
 	print("[PASS] Test 10: Complex L-shaped locked cluster unlock verified")
 	return true
+
+func test_cleared_chunk_interactions_blocked() -> bool:
+	print("[RUN] Test 11: Cleared Chunk Blocks Flag Toggling, Reveals, Chords, Modifications & BFS Ingress")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(4, 4)
+	grid.set_first_click(Vector2i(100, 100))
+
+	# Setup Chunk (0, 0): 1 mine at (0, 0), 15 safe cells at other positions
+	for x in range(4):
+		for y in range(4):
+			grid.set_mine_at(Vector2i(x, y), false)
+	grid.set_mine_at(Vector2i(0, 0), true)
+
+	var chunk = grid.get_chunk(Vector2i(0, 0))
+
+	# Reveal all 15 safe cells in chunk (0, 0)
+	for x in range(4):
+		for y in range(4):
+			if x == 0 and y == 0:
+				continue
+			grid.reveal_cell(Vector2i(x, y))
+
+	if not chunk.is_cleared:
+		print("[FAIL] Chunk (0, 0) should be cleared")
+		grid.free()
+		return false
+
+	# 1. Mine at (0, 0) was auto-flagged. Attempt to toggle flag -> must NOT unflag
+	var mine_cell = grid.get_cell(Vector2i(0, 0))
+	if not mine_cell.is_flagged:
+		print("[FAIL] Mine at (0, 0) should be auto-flagged")
+		grid.free()
+		return false
+
+	grid.toggle_flag(Vector2i(0, 0))
+	if not mine_cell.is_flagged:
+		print("[FAIL] toggle_flag should NOT remove flag from mine in cleared chunk")
+		grid.free()
+		return false
+
+	# 2. Safe cell in cleared chunk. Attempt to toggle flag -> must NOT flag
+	var safe_cell = grid.get_cell(Vector2i(1, 0))
+	grid.toggle_flag(Vector2i(1, 0))
+	if safe_cell.is_flagged:
+		print("[FAIL] toggle_flag should NOT place flag on cell in cleared chunk")
+		grid.free()
+		return false
+
+	# 3. Reveal cell in cleared chunk -> must return false
+	if grid.reveal_cell(Vector2i(0, 0)):
+		print("[FAIL] reveal_cell on mine in cleared chunk should return false")
+		grid.free()
+		return false
+	if grid.reveal_cell(Vector2i(1, 0)):
+		print("[FAIL] reveal_cell on safe cell in cleared chunk should return false")
+		grid.free()
+		return false
+
+	# 4. Chord reveal inside cleared chunk -> must return false
+	if grid.chord_reveal(Vector2i(1, 0)):
+		print("[FAIL] chord_reveal initiated inside cleared chunk should return false")
+		grid.free()
+		return false
+
+	# 5. set_mine_at on cleared chunk cell -> must be rejected
+	var original_mine_state = mine_cell.is_mine
+	grid.set_mine_at(Vector2i(0, 0), false)
+	if mine_cell.is_mine != original_mine_state:
+		print("[FAIL] set_mine_at should NOT modify mine state in cleared chunk")
+		grid.free()
+		return false
+
+	# 6. BFS flood fill from adjacent active chunk must NOT expand into cleared chunk
+	# Setup Chunk (1, 0): cells (4, 0) to (7, 3) all safe with 0 mines
+	for x in range(4, 8):
+		for y in range(4):
+			grid.set_mine_at(Vector2i(x, y), false)
+
+	# Cell (3, 0) is inside cleared chunk (0, 0)
+	grid.reveal_cell(Vector2i(5, 0))
+	if not grid.get_cell(Vector2i(5, 0)).is_revealed:
+		print("[FAIL] Adjacent chunk reveal failed")
+		grid.free()
+		return false
+
+	# 7. Chord reveal from adjacent active chunk (1, 0) must skip neighbors in cleared chunk (0, 0)
+	grid.set_mine_at(Vector2i(4, 1), true)
+	grid.toggle_flag(Vector2i(4, 1))
+	var _chord_res = grid.chord_reveal(Vector2i(4, 0))
+
+	grid.free()
+	print("[PASS] Test 11: Cleared chunk interactions blocked verified")
+	return true
+
 

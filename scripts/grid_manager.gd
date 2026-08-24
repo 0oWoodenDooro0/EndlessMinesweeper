@@ -113,6 +113,8 @@ func set_first_click(pos: Vector2i) -> void:
 		chunk_manager.recalculate_chunk_safe_cells(c_pos)
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
+	if chunk_manager.is_cell_in_cleared_chunk(pos):
+		return
 	if not has_first_clicked:
 		has_first_clicked = true
 		first_click_pos = Vector2i(-999999, -999999)
@@ -163,7 +165,7 @@ func reveal_cell(pos: Vector2i) -> bool:
 	if is_game_over:
 		return false
 
-	if chunk_manager.is_cell_in_locked_chunk(pos):
+	if chunk_manager.is_cell_in_locked_chunk(pos) or chunk_manager.is_cell_in_cleared_chunk(pos):
 		return false
 
 	var cell = get_cell(pos)
@@ -213,8 +215,9 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 					continue
 				visited[n_pos] = true
 
-				if chunk_manager.is_cell_in_locked_chunk(n_pos):
+				if chunk_manager.is_cell_in_locked_chunk(n_pos) or chunk_manager.is_cell_in_cleared_chunk(n_pos):
 					continue
+
 
 				var n_cell = get_cell(n_pos)
 				if n_cell.is_flagged or n_cell.is_revealed:
@@ -271,7 +274,7 @@ func toggle_flag(pos: Vector2i) -> void:
 	if is_game_over:
 		return
 
-	if chunk_manager.is_cell_in_locked_chunk(pos):
+	if chunk_manager.is_cell_in_locked_chunk(pos) or chunk_manager.is_cell_in_cleared_chunk(pos):
 		return
 
 	var cell = get_cell(pos)
@@ -288,7 +291,7 @@ func chord_reveal(pos: Vector2i) -> bool:
 	if is_game_over:
 		return false
 
-	if chunk_manager.is_cell_in_locked_chunk(pos):
+	if chunk_manager.is_cell_in_locked_chunk(pos) or chunk_manager.is_cell_in_cleared_chunk(pos):
 		return false
 
 	var cell = get_cell(pos)
@@ -307,7 +310,7 @@ func chord_reveal(pos: Vector2i) -> bool:
 			if dx == 0 and dy == 0:
 				continue
 			var n_pos = pos + Vector2i(dx, dy)
-			if chunk_manager.is_cell_in_locked_chunk(n_pos):
+			if chunk_manager.is_cell_in_locked_chunk(n_pos) or chunk_manager.is_cell_in_cleared_chunk(n_pos):
 				continue
 			var n_cell = get_cell(n_pos)
 			if not n_cell.is_revealed and not n_cell.is_flagged:

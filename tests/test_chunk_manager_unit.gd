@@ -36,6 +36,10 @@ func _init():
 	if not test_chunk_manager_serialization_and_deserialization():
 		success = false
 
+	# Test 8: is_cell_in_cleared_chunk Query
+	if not test_is_cell_in_cleared_chunk_query():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL CHUNK MANAGER UNIT TESTS PASSED")
@@ -433,3 +437,61 @@ func test_chunk_manager_serialization_and_deserialization() -> bool:
 
 	print("[PASS] Test 7: Serialization and deserialization verified")
 	return true
+
+func test_is_cell_in_cleared_chunk_query() -> bool:
+	print("[RUN] Test 8: is_cell_in_cleared_chunk Query")
+	var mines: Dictionary = {
+		Vector2i(0, 0): true,
+		Vector2i(1, 1): true
+	}
+	var is_mine_cb = func(pos: Vector2i) -> bool:
+		return mines.get(pos, false)
+
+	var cm = ChunkManager.new()
+	cm.setup(Vector2i(2, 2), is_mine_cb) # Chunk (0,0) has 2 mines (0,0),(1,1) and 2 safe cells (1,0),(0,1)
+
+	# Initially no chunks cleared
+	if cm.is_cell_in_cleared_chunk(Vector2i(0, 0)):
+		print("[FAIL] is_cell_in_cleared_chunk should be false before clearing")
+		return false
+	if cm.is_cell_in_cleared_chunk(Vector2i(1, 0)):
+		print("[FAIL] is_cell_in_cleared_chunk should be false for safe cell before clearing")
+		return false
+	if cm.is_cell_in_cleared_chunk(Vector2i(-5, -5)):
+		print("[FAIL] is_cell_in_cleared_chunk should be false for uninitialized chunk")
+		return false
+
+	# Reveal 1 safe cell
+	cm.register_reveal(Vector2i(1, 0), false)
+	if cm.is_cell_in_cleared_chunk(Vector2i(1, 0)):
+		print("[FAIL] is_cell_in_cleared_chunk should be false when partially revealed")
+		return false
+
+	# Reveal 2nd safe cell -> clears chunk (0, 0)
+	cm.register_reveal(Vector2i(0, 1), false)
+	if not cm.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should be cleared")
+		return false
+
+	# All cells in chunk (0, 0) should return true
+	for x in range(2):
+		for y in range(2):
+			if not cm.is_cell_in_cleared_chunk(Vector2i(x, y)):
+				print("[FAIL] is_cell_in_cleared_chunk should be true for (", x, ", ", y, ")")
+				return false
+
+	# Cells in neighboring chunk (1, 0) should return false
+	if cm.is_cell_in_cleared_chunk(Vector2i(2, 0)):
+		print("[FAIL] is_cell_in_cleared_chunk should be false for cells in uncleared chunk (1, 0)")
+		return false
+
+	# Negative chunk coordinates test: chunk (-1, -1) range [-2, -1] x [-2, -1]
+	var chunk_neg = cm.get_chunk(Vector2i(-1, -1))
+	chunk_neg.is_cleared = true
+	if not cm.is_cell_in_cleared_chunk(Vector2i(-1, -1)) or not cm.is_cell_in_cleared_chunk(Vector2i(-2, -2)):
+		print("[FAIL] is_cell_in_cleared_chunk should be true for cells in cleared negative chunk (-1, -1)")
+		return false
+
+	print("[PASS] Test 8: is_cell_in_cleared_chunk query verified")
+	return true
+

@@ -109,8 +109,9 @@ func set_first_click(pos: Vector2i) -> void:
 		recalculate_chunk_safe_cells(c_pos)
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
-	has_first_clicked = true
-	first_click_pos = Vector2i(-999999, -999999)
+	if not has_first_clicked:
+		has_first_clicked = true
+		first_click_pos = Vector2i(-999999, -999999)
 	var cell = get_cell(pos)
 	cell.is_mine = mine_state
 	recalculate_chunk_safe_cells(cell_to_chunk(pos))
@@ -424,3 +425,100 @@ func _get_number_color(number: int) -> Color:
 		7: return Color(0.1, 0.1, 0.1)
 		8: return Color(0.5, 0.5, 0.5)
 		_: return Color.BLACK
+
+func serialize() -> Dictionary:
+	var serialized_cells = []
+	for p in grid_data:
+		var cell = grid_data[p]
+		serialized_cells.append({
+			"x": p.x,
+			"y": p.y,
+			"is_mine": cell.is_mine,
+			"is_revealed": cell.is_revealed,
+			"is_flagged": cell.is_flagged
+		})
+
+	var serialized_chunks = []
+	for cp in chunks:
+		var chunk = chunks[cp]
+		var locked_mines = []
+		for m in chunk.locked_mine_positions:
+			locked_mines.append([m.x, m.y])
+		serialized_chunks.append({
+			"x": cp.x,
+			"y": cp.y,
+			"is_locked": chunk.is_locked,
+			"locked_mine_positions": locked_mines,
+			"total_safe_cells": chunk.total_safe_cells,
+			"revealed_safe_cells": chunk.revealed_safe_cells,
+			"is_cleared": chunk.is_cleared
+		})
+
+	return {
+		"world_seed": world_seed,
+		"mine_density": mine_density,
+		"has_first_clicked": has_first_clicked,
+		"first_click_pos": [first_click_pos.x, first_click_pos.y],
+		"is_game_over": is_game_over,
+		"chunk_size": [chunk_size.x, chunk_size.y],
+		"safe_zone_radius": safe_zone_radius,
+		"enable_chunk_lockout": enable_chunk_lockout,
+		"cells": serialized_cells,
+		"chunks": serialized_chunks
+	}
+
+func deserialize(data: Dictionary) -> bool:
+	if data == null or not data.has("world_seed") or not data.has("mine_density") or not data.has("cells") or not data.has("chunks"):
+		return false
+
+	if not (data["cells"] is Array) or not (data["chunks"] is Array):
+		return false
+
+	world_seed = int(data["world_seed"])
+	mine_density = float(data["mine_density"])
+	has_first_clicked = bool(data.get("has_first_clicked", false))
+	if data.has("first_click_pos") and data["first_click_pos"] is Array and data["first_click_pos"].size() >= 2:
+		first_click_pos = Vector2i(int(data["first_click_pos"][0]), int(data["first_click_pos"][1]))
+	else:
+		first_click_pos = Vector2i.ZERO
+
+	is_game_over = bool(data.get("is_game_over", false))
+
+	if data.has("chunk_size") and data["chunk_size"] is Array and data["chunk_size"].size() >= 2:
+		chunk_size = Vector2i(int(data["chunk_size"][0]), int(data["chunk_size"][1]))
+
+	safe_zone_radius = int(data.get("safe_zone_radius", 1))
+	enable_chunk_lockout = bool(data.get("enable_chunk_lockout", true))
+
+	grid_data.clear()
+	for c_info in data["cells"]:
+		if not (c_info is Dictionary) or not c_info.has("x") or not c_info.has("y"):
+			continue
+		var p = Vector2i(int(c_info["x"]), int(c_info["y"]))
+		var cell = CellData.new(p)
+		cell.is_mine = bool(c_info.get("is_mine", false))
+		cell.is_revealed = bool(c_info.get("is_revealed", false))
+		cell.is_flagged = bool(c_info.get("is_flagged", false))
+		grid_data[p] = cell
+
+	chunks.clear()
+	for ch_info in data["chunks"]:
+		if not (ch_info is Dictionary) or not ch_info.has("x") or not ch_info.has("y"):
+			continue
+		var cp = Vector2i(int(ch_info["x"]), int(ch_info["y"]))
+		var chunk = ChunkData.new(cp)
+		chunk.is_locked = bool(ch_info.get("is_locked", false))
+		chunk.total_safe_cells = int(ch_info.get("total_safe_cells", 0))
+		chunk.revealed_safe_cells = int(ch_info.get("revealed_safe_cells", 0))
+		chunk.is_cleared = bool(ch_info.get("is_cleared", false))
+		var locked_m: Array[Vector2i] = []
+		if ch_info.has("locked_mine_positions") and ch_info["locked_mine_positions"] is Array:
+			for m in ch_info["locked_mine_positions"]:
+				if m is Array and m.size() >= 2:
+					locked_m.append(Vector2i(int(m[0]), int(m[1])))
+		chunk.locked_mine_positions = locked_m
+		chunks[cp] = chunk
+
+	_request_redraw()
+	return true
+

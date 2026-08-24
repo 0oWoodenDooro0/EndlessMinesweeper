@@ -81,3 +81,39 @@ func get_visible_world_rect() -> Rect2:
 	var world_size = vp_size / current_zoom
 	var top_left = global_position - (world_size / 2.0)
 	return Rect2(top_left, world_size)
+
+func serialize() -> Dictionary:
+	return {
+		"position": [position.x, position.y],
+		"target_position": [target_position.x, target_position.y],
+		"zoom": [zoom.x, zoom.y],
+		"target_zoom": [target_zoom.x, target_zoom.y]
+	}
+
+func deserialize(data: Dictionary) -> bool:
+	if data == null or not data.has("position") or not data.has("zoom"):
+		return false
+
+	var pos = data["position"]
+	var tpos = data.get("target_position", pos)
+	var zm = data["zoom"]
+	var tzm = data.get("target_zoom", zm)
+
+	if not (pos is Array) or pos.size() < 2 or not (zm is Array) or zm.size() < 2:
+		return false
+
+	position = Vector2(float(pos[0]), float(pos[1]))
+	if tpos is Array and tpos.size() >= 2:
+		target_position = Vector2(float(tpos[0]), float(tpos[1]))
+	else:
+		target_position = position
+
+	zoom = Vector2(float(zm[0]), float(zm[1]))
+	if tzm is Array and tzm.size() >= 2:
+		target_zoom = Vector2(float(tzm[0]), float(tzm[1]))
+	else:
+		target_zoom = zoom
+
+	_notify_grid_manager()
+	return true
+

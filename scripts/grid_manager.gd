@@ -23,6 +23,7 @@ signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 		if chunk_manager != null:
 			chunk_manager.chunk_size = value
 @export var enable_chunk_lockout: bool = true
+@export var drag_threshold: float = 6.0
 @export var lod_zoom_threshold: float = 0.45
 @export var custom_font: Font = null
 
@@ -40,6 +41,15 @@ var chunks: Dictionary:
 			return chunk_manager.chunks
 		return {}
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
+
+var _is_right_mouse_down: bool = false
+var _right_mouse_dragged: bool = false
+var _right_mouse_press_pos: Vector2 = Vector2.ZERO
+var _right_mouse_press_cell: Vector2i = Vector2i.ZERO
+var _is_middle_mouse_down: bool = false
+var _middle_mouse_dragged: bool = false
+var _middle_mouse_press_pos: Vector2 = Vector2.ZERO
+var _middle_mouse_press_cell: Vector2i = Vector2i.ZERO
 
 func _init() -> void:
 	_init_chunk_manager()
@@ -157,6 +167,10 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 		world_seed = randi() & 0x7FFFFFFF
 	grid_data.clear()
 	chunk_manager.reset(chunk_size)
+	_is_right_mouse_down = false
+	_right_mouse_dragged = false
+	_is_middle_mouse_down = false
+	_middle_mouse_dragged = false
 	if session != null:
 		session.reset(new_density)
 	game_reset.emit()
@@ -338,21 +352,53 @@ func chord_reveal(pos: Vector2i) -> bool:
 func world_to_cell(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(floor(world_pos.x / float(cell_size.x))), int(floor(world_pos.y / float(cell_size.y))))
 
+func _get_mouse_world_pos(event: InputEventMouse) -> Vector2:
+	if is_inside_tree() and get_viewport() != null:
+		return get_global_mouse_position()
+	return event.position
+
 func _unhandled_input(event: InputEvent) -> void:
 	if is_game_over:
 		return
 
-	if event is InputEventMouseButton and event.pressed:
-		var cell_pos = world_to_cell(get_global_mouse_position())
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.double_click:
-				chord_reveal(cell_pos)
-			else:
-				reveal_cell(cell_pos)
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			toggle_flag(cell_pos)
-		elif event.button_index == MOUSE_BUTTON_MIDDLE:
-			chord_reveal(cell_pos)
+	if event is InputEventMouseButton:
+		if event.pressed:
+			var world_pos = _get_mouse_world_pos(event)
+			var cell_pos = world_to_cell(world_pos)
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				if event.double_click:
+					chord_reveal(cell_pos)
+				else:
+					reveal_cell(cell_pos)
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				_is_right_mouse_down = true
+				_right_mouse_dragged = false
+				_right_mouse_press_pos = event.position
+				_right_mouse_press_cell = cell_pos
+			elif event.button_index == MOUSE_BUTTON_MIDDLE:
+				_is_middle_mouse_down = true
+				_middle_mouse_dragged = false
+				_middle_mouse_press_pos = event.position
+				_middle_mouse_press_cell = cell_pos
+		else:
+			if event.button_index == MOUSE_BUTTON_RIGHT:
+				if _is_right_mouse_down and not _right_mouse_dragged:
+					toggle_flag(_right_mouse_press_cell)
+				_is_right_mouse_down = false
+				_right_mouse_dragged = false
+			elif event.button_index == MOUSE_BUTTON_MIDDLE:
+				if _is_middle_mouse_down and not _middle_mouse_dragged:
+					chord_reveal(_middle_mouse_press_cell)
+				_is_middle_mouse_down = false
+				_middle_mouse_dragged = false
+
+	elif event is InputEventMouseMotion:
+		if _is_right_mouse_down and not _right_mouse_dragged:
+			if event.position.distance_to(_right_mouse_press_pos) > drag_threshold:
+				_right_mouse_dragged = true
+		if _is_middle_mouse_down and not _middle_mouse_dragged:
+			if event.position.distance_to(_middle_mouse_press_pos) > drag_threshold:
+				_middle_mouse_dragged = true
 
 func is_lod_active() -> bool:
 	return current_zoom_level <= lod_zoom_threshold

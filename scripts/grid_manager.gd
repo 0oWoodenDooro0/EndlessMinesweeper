@@ -229,49 +229,90 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 func _check_chunk_cleared(chunk: ChunkData) -> void:
 	if not chunk.is_cleared and chunk.total_safe_cells > 0 and chunk.revealed_safe_cells >= chunk.total_safe_cells:
 		chunk.is_cleared = true
+		_auto_flag_chunk_mines(chunk)
 		chunk_cleared.emit(chunk.chunk_pos)
 		_check_neighbors_unlock(chunk.chunk_pos)
 
+func _auto_flag_chunk_mines(chunk: ChunkData) -> void:
+	var min_x = chunk.chunk_pos.x * chunk_size.x
+	var min_y = chunk.chunk_pos.y * chunk_size.y
+	for x in range(min_x, min_x + chunk_size.x):
+		for y in range(min_y, min_y + chunk_size.y):
+			var pos = Vector2i(x, y)
+			if is_mine_at(pos):
+				var cell = get_cell(pos)
+				if not cell.is_flagged:
+					cell.is_flagged = true
+					cell_flag_changed.emit(pos, true)
+
 func _check_neighbors_unlock(cleared_chunk_pos: Vector2i) -> void:
+	var processed_clusters: Dictionary = {}
 	for dx in [-1, 0, 1]:
 		for dy in [-1, 0, 1]:
 			if dx == 0 and dy == 0:
 				continue
 			var target_c_pos = cleared_chunk_pos + Vector2i(dx, dy)
+			if processed_clusters.has(target_c_pos):
+				continue
 			if chunks.has(target_c_pos):
 				var target_chunk = chunks[target_c_pos]
 				if target_chunk.is_locked:
-					_try_unlock_chunk(target_c_pos)
+					_try_unlock_locked_cluster(target_c_pos, processed_clusters)
 
-func _try_unlock_chunk(c_pos: Vector2i) -> void:
-	var target_chunk = get_chunk(c_pos)
-	if not target_chunk.is_locked:
-		return
+func _try_unlock_locked_cluster(start_c_pos: Vector2i, processed_clusters: Dictionary) -> void:
+	# 1. Find all 8-direction connected locked chunks (BFS)
+	var queue: Array[Vector2i] = [start_c_pos]
+	var cluster: Array[Vector2i] = [start_c_pos]
+	var cluster_set: Dictionary = {start_c_pos: true}
 
-	var all_8_cleared = true
-	for dx in [-1, 0, 1]:
-		for dy in [-1, 0, 1]:
-			if dx == 0 and dy == 0:
-				continue
-			var n_pos = c_pos + Vector2i(dx, dy)
-			var n_chunk = get_chunk(n_pos)
-			if not n_chunk.is_cleared:
-				all_8_cleared = false
-				break
-		if not all_8_cleared:
+	while queue.size() > 0:
+		var curr = queue.pop_front()
+		processed_clusters[curr] = true
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				if dx == 0 and dy == 0:
+					continue
+				var n_pos = curr + Vector2i(dx, dy)
+				if cluster_set.has(n_pos):
+					continue
+				if chunks.has(n_pos) and chunks[n_pos].is_locked:
+					cluster_set[n_pos] = true
+					cluster.append(n_pos)
+					queue.append(n_pos)
+
+	# 2. Collect external perimeter of the cluster (all 8-neighbors of cluster members not in cluster)
+	var perimeter: Dictionary = {}
+	for c_member in cluster:
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				if dx == 0 and dy == 0:
+					continue
+				var p_pos = c_member + Vector2i(dx, dy)
+				if not cluster_set.has(p_pos):
+					perimeter[p_pos] = true
+
+	# 3. Check if all perimeter chunks are cleared
+	var all_cleared = true
+	for p_pos in perimeter:
+		var p_chunk = get_chunk(p_pos)
+		if not p_chunk.is_cleared:
+			all_cleared = false
 			break
 
-	if all_8_cleared:
-		target_chunk.is_locked = false
-		var recovered: Array[Vector2i] = []
-		for m_pos in target_chunk.locked_mine_positions:
-			var m_cell = get_cell(m_pos)
-			m_cell.is_revealed = false
-			m_cell.is_flagged = true
-			recovered.append(m_pos)
-			cell_flag_changed.emit(m_pos, true)
-		target_chunk.locked_mine_positions.clear()
-		chunk_unlocked.emit(c_pos, recovered)
+	# 4. If all perimeter chunks are cleared, unlock all chunks in the cluster
+	if all_cleared:
+		for c_member in cluster:
+			var ch = get_chunk(c_member)
+			ch.is_locked = false
+			var recovered: Array[Vector2i] = []
+			for m_pos in ch.locked_mine_positions:
+				var m_cell = get_cell(m_pos)
+				m_cell.is_revealed = false
+				m_cell.is_flagged = true
+				recovered.append(m_pos)
+				cell_flag_changed.emit(m_pos, true)
+			ch.locked_mine_positions.clear()
+			chunk_unlocked.emit(c_member, recovered)
 		_request_redraw()
 
 func toggle_flag(pos: Vector2i) -> void:

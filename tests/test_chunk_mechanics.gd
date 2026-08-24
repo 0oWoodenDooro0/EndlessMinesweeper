@@ -37,6 +37,18 @@ func _init():
 	if not test_hud_chunk_statistics_tracking():
 		success = false
 
+	# Test 8: Auto-flagging Mines on Chunk Clear & HUD Sync
+	if not test_auto_flag_on_chunk_clear():
+		success = false
+
+	# Test 9: Two Connected Locked Chunks Unlock on Perimeter Clear
+	if not test_two_connected_locked_chunks_unlock():
+		success = false
+
+	# Test 10: Complex L-Shaped Locked Cluster Unlock
+	if not test_complex_locked_cluster_unlock():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -489,3 +501,274 @@ func test_hud_chunk_statistics_tracking() -> bool:
 	grid.free()
 	print("[PASS] Test 7: HUD chunk statistics tracking verified")
 	return true
+
+func test_auto_flag_on_chunk_clear() -> bool:
+	print("[RUN] Test 8: Auto-flagging Mines on Chunk Clear & HUD Sync")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.set_first_click(Vector2i(100, 100))
+
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# Setup Chunk (0, 0) with 2 mines and 2 safe cells
+	# Mine at (0, 0), Mine at (1, 1), Safe at (1, 0), Safe at (0, 1)
+	var m1 = Vector2i(0, 0)
+	var m2 = Vector2i(1, 1)
+	var s1 = Vector2i(1, 0)
+	var s2 = Vector2i(0, 1)
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(m2, true)
+	grid.set_mine_at(s1, false)
+	grid.set_mine_at(s2, false)
+
+	# Pre-flag m1 manually before clearing to verify manual flag is preserved and not double-counted
+	grid.toggle_flag(m1)
+	if hud.flag_count != 1:
+		print("[FAIL] HUD flag_count should be 1 after manual flag, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	var flag_signals_received: Array[Vector2i] = []
+	grid.connect("cell_flag_changed", func(pos: Vector2i, is_flagged: bool):
+		if is_flagged:
+			flag_signals_received.append(pos)
+	)
+
+	# Reveal first safe cell
+	grid.reveal_cell(s1)
+	var chunk = grid.get_chunk(Vector2i(0, 0))
+	if chunk.is_cleared:
+		print("[FAIL] Chunk should not be cleared yet after 1 of 2 safe cells revealed")
+		hud.free()
+		grid.free()
+		return false
+
+	# Reveal second safe cell -> Chunk cleared!
+	grid.reveal_cell(s2)
+
+	if not chunk.is_cleared:
+		print("[FAIL] Chunk should be cleared after revealing all safe cells")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify unflagged mine (m2) is now automatically flagged
+	var cell_m2 = grid.get_cell(m2)
+	if not cell_m2.is_flagged or cell_m2.is_revealed:
+		print("[FAIL] Mine at m2 was not auto-flagged properly: is_flagged=", cell_m2.is_flagged, " is_revealed=", cell_m2.is_revealed)
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify pre-flagged mine (m1) is still flagged
+	var cell_m1 = grid.get_cell(m1)
+	if not cell_m1.is_flagged or cell_m1.is_revealed:
+		print("[FAIL] Mine at m1 is no longer flagged")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify HUD count reflects exactly 2 flags
+	if hud.flag_count != 2:
+		print("[FAIL] HUD flag_count should be 2 after chunk auto-flag, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify cell_flag_changed signal was emitted for m2
+	if not flag_signals_received.has(m2):
+		print("[FAIL] cell_flag_changed signal was not emitted for auto-flagged mine m2")
+		hud.free()
+		grid.free()
+		return false
+
+	hud.free()
+	grid.free()
+	print("[PASS] Test 8: Auto-flagging on Chunk Clear verified")
+	return true
+
+func test_two_connected_locked_chunks_unlock() -> bool:
+	print("[RUN] Test 9: Two Connected Locked Chunks Unlock on Perimeter Clear")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.mine_density = 1.0 # High default density
+	grid.set_first_click(Vector2i(100, 100))
+
+	# Setup Chunk (0, 0) and Chunk (1, 0)
+	var c0 = Vector2i(0, 0)
+	var c1 = Vector2i(1, 0)
+
+	var m0 = Vector2i(0, 0)
+	var m1 = Vector2i(2, 0)
+
+	grid.set_mine_at(m0, true)
+	grid.set_mine_at(Vector2i(1, 0), false)
+	grid.set_mine_at(Vector2i(0, 1), false)
+	grid.set_mine_at(Vector2i(1, 1), false)
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(Vector2i(3, 0), false)
+	grid.set_mine_at(Vector2i(2, 1), false)
+	grid.set_mine_at(Vector2i(3, 1), false)
+
+	# Trigger lockouts on both chunks
+	grid.reveal_cell(m0)
+	grid.reveal_cell(m1)
+
+	var chunk0 = grid.get_chunk(c0)
+	var chunk1 = grid.get_chunk(c1)
+
+	if not chunk0.is_locked or not chunk1.is_locked:
+		print("[FAIL] Both chunks should be locked")
+		grid.free()
+		return false
+
+	var unlocked_chunks: Array[Vector2i] = []
+	grid.connect("chunk_unlocked", func(chunk_pos: Vector2i, _recovered: Array[Vector2i]):
+		unlocked_chunks.append(chunk_pos)
+	)
+
+	# The 10 perimeter chunks around {(0,0), (1,0)}
+	var perimeter_chunks: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(2, -1),
+		Vector2i(-1,  0),                                   Vector2i(2,  0),
+		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1), Vector2i(2,  1)
+	]
+
+	# Configure all 10 perimeter chunks (1 mine, 3 safe cells)
+	for p_chunk in perimeter_chunks:
+		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2), true)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2), false)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1), false)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1), false)
+
+	# Clear the first 9 perimeter chunks
+	for i in range(9):
+		var p_chunk = perimeter_chunks[i]
+		grid.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2))
+		grid.reveal_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1))
+		grid.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1))
+
+		if chunk0.is_locked != true or chunk1.is_locked != true:
+			print("[FAIL] Chunks unlocked prematurely before entire cluster perimeter was cleared")
+			grid.free()
+			return false
+
+	# Clear the 10th perimeter chunk
+	var last_p_chunk = perimeter_chunks[9]
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2 + 1, last_p_chunk.y * 2))
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2, last_p_chunk.y * 2 + 1))
+	grid.reveal_cell(Vector2i(last_p_chunk.x * 2 + 1, last_p_chunk.y * 2 + 1))
+
+	# Both chunks should now be unlocked!
+	if chunk0.is_locked or chunk1.is_locked:
+		print("[FAIL] Both chunks should be unlocked after all perimeter chunks are cleared. c0.locked=", chunk0.is_locked, " c1.locked=", chunk1.is_locked)
+		grid.free()
+		return false
+
+	if not unlocked_chunks.has(c0) or not unlocked_chunks.has(c1):
+		print("[FAIL] chunk_unlocked signal missing for cluster members: ", unlocked_chunks)
+		grid.free()
+		return false
+
+	# Verify recovered mines are converted to flags
+	if not grid.get_cell(m0).is_flagged or grid.get_cell(m0).is_revealed:
+		print("[FAIL] Mine at m0 was not converted to flag")
+		grid.free()
+		return false
+
+	if not grid.get_cell(m1).is_flagged or grid.get_cell(m1).is_revealed:
+		print("[FAIL] Mine at m1 was not converted to flag")
+		grid.free()
+		return false
+
+	grid.free()
+	print("[PASS] Test 9: Two connected locked chunks unlock verified")
+	return true
+
+func test_complex_locked_cluster_unlock() -> bool:
+	print("[RUN] Test 10: Complex L-Shaped Locked Cluster Unlock")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.mine_density = 1.0
+	grid.set_first_click(Vector2i(100, 100))
+
+	# 3 Chunks forming an L-shape: (0,0), (1,0), (0,1)
+	var cluster = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1)]
+	var mines = [Vector2i(0, 0), Vector2i(2, 0), Vector2i(0, 2)]
+
+	for i in range(3):
+		var cp = cluster[i]
+		var mp = mines[i]
+		grid.set_mine_at(mp, true)
+		grid.set_mine_at(Vector2i(cp.x * 2 + 1, cp.y * 2), false)
+		grid.set_mine_at(Vector2i(cp.x * 2, cp.y * 2 + 1), false)
+		grid.set_mine_at(Vector2i(cp.x * 2 + 1, cp.y * 2 + 1), false)
+
+	# Trigger lock on all 3 chunks
+	for mp in mines:
+		grid.reveal_cell(mp)
+
+	for cp in cluster:
+		if not grid.get_chunk(cp).is_locked:
+			print("[FAIL] Chunk ", cp, " should be locked")
+			grid.free()
+			return false
+
+	# External perimeter of {(0,0), (1,0), (0,1)}:
+	# All 8-neighbors of the 3 chunks excluding the 3 chunks themselves
+	var perimeter_chunks: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(2, -1),
+		Vector2i(-1,  0),                                   Vector2i(2,  0),
+		Vector2i(-1,  1),                  Vector2i(1,  1), Vector2i(2,  1),
+		Vector2i(-1,  2), Vector2i(0,  2), Vector2i(1,  2)
+	]
+
+	# Configure all 12 perimeter chunks
+	for p_chunk in perimeter_chunks:
+		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2), true)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2), false)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1), false)
+		grid.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1), false)
+
+	# Clear 11 of 12 perimeter chunks
+	for i in range(11):
+		var p_chunk = perimeter_chunks[i]
+		grid.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2))
+		grid.reveal_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1))
+		grid.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1))
+
+		for cp in cluster:
+			if grid.get_chunk(cp).is_locked != true:
+				print("[FAIL] Chunk ", cp, " unlocked before all 12 perimeter chunks were cleared")
+				grid.free()
+				return false
+
+	# Clear the final 12th perimeter chunk
+	var last_p = perimeter_chunks[11]
+	grid.reveal_cell(Vector2i(last_p.x * 2 + 1, last_p.y * 2))
+	grid.reveal_cell(Vector2i(last_p.x * 2, last_p.y * 2 + 1))
+	grid.reveal_cell(Vector2i(last_p.x * 2 + 1, last_p.y * 2 + 1))
+
+	# All 3 chunks in cluster must now be unlocked!
+	for cp in cluster:
+		if grid.get_chunk(cp).is_locked:
+			print("[FAIL] Chunk ", cp, " should be unlocked after full perimeter clearance")
+			grid.free()
+			return false
+
+	for mp in mines:
+		var cell = grid.get_cell(mp)
+		if not cell.is_flagged or cell.is_revealed:
+			print("[FAIL] Mine at ", mp, " was not converted to flag")
+			grid.free()
+			return false
+
+	grid.free()
+	print("[PASS] Test 10: Complex L-shaped locked cluster unlock verified")
+	return true
+

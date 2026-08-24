@@ -1,6 +1,7 @@
 class_name Main
 extends Node2D
 
+const GameSession = preload("res://scripts/game_session.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
 const GridManager = preload("res://scripts/grid_manager.gd")
 const HUD = preload("res://scripts/hud.gd")
@@ -17,6 +18,7 @@ const CameraController = preload("res://scripts/camera_controller.gd")
 var grid_manager: GridManager
 var camera: CameraController
 var hud: HUD
+var session: GameSession = GameSession.new()
 
 var save_manager: SaveManager = SaveManager.new()
 var auto_save_timer: float = 0.0
@@ -52,9 +54,14 @@ func _ensure_node_references() -> void:
 	if hud == null:
 		hud = get_node_or_null("HUD") as HUD
 
-	if hud != null and grid_manager != null:
+	if hud != null:
 		hud.setup_ui_nodes()
-		hud.bind_grid_manager(grid_manager)
+		hud.bind_session(session)
+		if grid_manager != null:
+			hud.bind_grid_manager(grid_manager)
+
+	if grid_manager != null:
+		grid_manager.bind_session(session)
 
 func _try_auto_load() -> void:
 	if save_manager.has_save(save_file_path):
@@ -63,26 +70,22 @@ func _try_auto_load() -> void:
 			_is_loaded = true
 
 func _connect_signals() -> void:
+	if session != null:
+		if not session.is_connected("stats_changed", Callable(self, "_on_session_stats_changed")):
+			session.connect("stats_changed", Callable(self, "_on_session_stats_changed"))
+		if not session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
+			session.connect("game_reset", Callable(self, "_on_session_game_reset"))
+
 	if grid_manager != null:
-		if not grid_manager.is_connected("cell_revealed", Callable(self, "_on_state_changed")):
-			grid_manager.connect("cell_revealed", Callable(self, "_on_state_changed"))
-		if not grid_manager.is_connected("cell_flag_changed", Callable(self, "_on_state_changed")):
-			grid_manager.connect("cell_flag_changed", Callable(self, "_on_state_changed"))
-		if not grid_manager.is_connected("chunk_locked", Callable(self, "_on_state_changed")):
-			grid_manager.connect("chunk_locked", Callable(self, "_on_state_changed"))
-		if not grid_manager.is_connected("chunk_cleared", Callable(self, "_on_state_changed")):
-			grid_manager.connect("chunk_cleared", Callable(self, "_on_state_changed"))
-		if not grid_manager.is_connected("chunk_unlocked", Callable(self, "_on_state_changed")):
-			grid_manager.connect("chunk_unlocked", Callable(self, "_on_state_changed"))
-		if not grid_manager.is_connected("game_reset", Callable(self, "_on_game_reset")):
-			grid_manager.connect("game_reset", Callable(self, "_on_game_reset"))
+		if not grid_manager.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
+			grid_manager.connect("game_reset", Callable(self, "_on_session_game_reset"))
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_game()
 
 func _process(delta: float) -> void:
-	if hud != null and hud.is_timer_running:
+	if session != null and session.is_timer_running:
 		auto_save_timer += delta
 		if auto_save_timer >= AUTO_SAVE_INTERVAL:
 			auto_save_timer = 0.0
@@ -93,8 +96,8 @@ func save_game() -> void:
 	if grid_manager != null:
 		save_manager.save_game_state(grid_manager, hud, camera, save_file_path)
 
-func _on_state_changed(_a = null, _b = null) -> void:
+func _on_session_stats_changed(_stats: Dictionary = {}) -> void:
 	save_game()
 
-func _on_game_reset() -> void:
+func _on_session_game_reset() -> void:
 	save_game()

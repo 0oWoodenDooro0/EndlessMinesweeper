@@ -119,9 +119,6 @@ func set_first_click(pos: Vector2i) -> void:
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
 	if chunk_manager.is_cell_in_cleared_chunk(pos):
 		return
-	if not has_first_clicked:
-		has_first_clicked = true
-		first_click_pos = Vector2i(-999999, -999999)
 	var cell = get_cell(pos)
 	cell.is_mine = mine_state
 	chunk_manager.recalculate_chunk_safe_cells(chunk_manager.cell_to_chunk(pos))
@@ -165,6 +162,16 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 	game_reset.emit()
 	_request_redraw()
 
+func has_revealed_neighbor(pos: Vector2i) -> bool:
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var n_pos = pos + Vector2i(dx, dy)
+			if grid_data.has(n_pos) and grid_data[n_pos].is_revealed:
+				return true
+	return false
+
 func reveal_cell(pos: Vector2i) -> bool:
 	if is_game_over:
 		return false
@@ -174,6 +181,9 @@ func reveal_cell(pos: Vector2i) -> bool:
 
 	var cell = get_cell(pos)
 	if cell.is_revealed or cell.is_flagged:
+		return false
+
+	if has_first_clicked and not has_revealed_neighbor(pos):
 		return false
 
 	if not has_first_clicked:
@@ -278,6 +288,9 @@ func toggle_flag(pos: Vector2i) -> void:
 		return
 
 	if chunk_manager.is_cell_in_locked_chunk(pos) or chunk_manager.is_cell_in_cleared_chunk(pos):
+		return
+
+	if not has_revealed_neighbor(pos):
 		return
 
 	var cell = get_cell(pos)

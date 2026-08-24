@@ -182,6 +182,7 @@ func test_hud_serialization_and_deserialization() -> bool:
 	hud1.locked_chunks_count = 2
 	hud1.elapsed_time = 145.8
 	hud1.is_timer_running = true
+	hud1.difficulty_option.selected = 2
 
 	var serialized_hud = hud1.serialize()
 	if serialized_hud == null or serialized_hud.is_empty():
@@ -206,6 +207,12 @@ func test_hud_serialization_and_deserialization() -> bool:
 
 	if not is_equal_approx(hud2.elapsed_time, 145.8) or hud2.is_timer_running != true:
 		print("[FAIL] Deserialized HUD timer mismatch")
+		hud1.free()
+		hud2.free()
+		return false
+
+	if hud2.difficulty_option.selected != 2:
+		print("[FAIL] Deserialized difficulty option mismatch: ", hud2.difficulty_option.selected)
 		hud1.free()
 		hud2.free()
 		return false
@@ -398,6 +405,12 @@ func test_startup_auto_load() -> bool:
 
 	if cam.position != Vector2(500.0, 300.0) or cam.zoom != Vector2(2.0, 2.0):
 		print("[FAIL] Camera position/zoom not auto-loaded on startup")
+		sm.delete_save(test_path)
+		main.queue_free()
+		return false
+
+	if hud.difficulty_option.selected != 2:
+		print("[FAIL] HUD difficulty option not synchronized on startup auto-load: ", hud.difficulty_option.selected)
 		sm.delete_save(test_path)
 		main.queue_free()
 		return false

@@ -216,14 +216,23 @@ func set_difficulty_by_index(index: int) -> void:
 		if difficulty_option != null and difficulty_option.selected != index:
 			difficulty_option.selected = index
 
+func sync_difficulty_with_density(density: float) -> void:
+	for i in range(DIFFICULTIES.size()):
+		if is_equal_approx(DIFFICULTIES[i], density):
+			if difficulty_option != null:
+				difficulty_option.selected = i
+			return
+
 func serialize() -> Dictionary:
+	var diff_idx = difficulty_option.selected if difficulty_option != null else 1
 	return {
 		"revealed_count": revealed_count,
 		"flag_count": flag_count,
 		"cleared_chunks_count": cleared_chunks_count,
 		"locked_chunks_count": locked_chunks_count,
 		"elapsed_time": elapsed_time,
-		"is_timer_running": is_timer_running
+		"is_timer_running": is_timer_running,
+		"difficulty_index": diff_idx
 	}
 
 func deserialize(data: Dictionary) -> bool:
@@ -236,6 +245,13 @@ func deserialize(data: Dictionary) -> bool:
 	locked_chunks_count = int(data.get("locked_chunks_count", 0))
 	elapsed_time = float(data.get("elapsed_time", 0.0))
 	is_timer_running = bool(data.get("is_timer_running", false))
+
+	if data.has("difficulty_index"):
+		var idx = int(data["difficulty_index"])
+		if difficulty_option != null and idx >= 0 and idx < difficulty_option.item_count:
+			difficulty_option.selected = idx
+	elif grid_manager != null:
+		sync_difficulty_with_density(grid_manager.mine_density)
 
 	_update_labels()
 	return true

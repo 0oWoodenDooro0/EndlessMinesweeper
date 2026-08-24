@@ -1,6 +1,10 @@
 class_name GridManager
 extends Node2D
 
+signal cell_revealed(pos: Vector2i, is_mine: bool)
+signal cell_flag_changed(pos: Vector2i, is_flagged: bool)
+signal game_over(hit_mine_pos: Vector2i)
+
 @export var world_seed: int = 1337
 @export var mine_density: float = 0.15
 @export var cell_size: Vector2i = Vector2i(32, 32)
@@ -8,6 +12,7 @@ extends Node2D
 
 var has_first_clicked: bool = false
 var first_click_pos: Vector2i = Vector2i.ZERO
+var is_game_over: bool = false
 var grid_data: Dictionary = {} # Vector2i -> CellData
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
 
@@ -67,9 +72,133 @@ func count_neighbor_mines(pos: Vector2i) -> int:
 				count += 1
 	return count
 
+func count_neighbor_flags(pos: Vector2i) -> int:
+	var count = 0
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var n_pos = pos + Vector2i(dx, dy)
+			if get_cell(n_pos).is_flagged:
+				count += 1
+	return count
+
+func reveal_cell(pos: Vector2i) -> bool:
+	if is_game_over:
+		return false
+
+	var cell = get_cell(pos)
+	if cell.is_revealed or cell.is_flagged:
+		return false
+
+	if not has_first_clicked:
+		set_first_click(pos)
+
+	cell.is_revealed = true
+	cell_revealed.emit(pos, cell.is_mine)
+
+	if cell.is_mine:
+		is_game_over = true
+		game_over.emit(pos)
+		_request_redraw()
+		return true
+
+	if count_neighbor_mines(pos) == 0:
+		_expand_zero_mines_bfs(pos)
+
+	_request_redraw()
+	return true
+
+func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
+	var queue: Array[Vector2i] = [start_pos]
+	var visited: Dictionary = {start_pos: true}
+
+	while queue.size() > 0:
+		var curr_pos = queue.pop_front()
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				if dx == 0 and dy == 0:
+					continue
+				var n_pos = curr_pos + Vector2i(dx, dy)
+				if visited.has(n_pos):
+					continue
+				visited[n_pos] = true
+
+				var n_cell = get_cell(n_pos)
+				if n_cell.is_flagged or n_cell.is_revealed:
+					continue
+
+				n_cell.is_revealed = true
+				cell_revealed.emit(n_pos, n_cell.is_mine)
+
+				if not n_cell.is_mine and count_neighbor_mines(n_pos) == 0:
+					queue.append(n_pos)
+
+func toggle_flag(pos: Vector2i) -> void:
+	if is_game_over:
+		return
+
+	var cell = get_cell(pos)
+	if cell.is_revealed:
+		return
+
+	cell.is_flagged = not cell.is_flagged
+	cell_flag_changed.emit(pos, cell.is_flagged)
+	_request_redraw()
+
+func chord_reveal(pos: Vector2i) -> bool:
+	if is_game_over:
+		return false
+
+	var cell = get_cell(pos)
+	if not cell.is_revealed:
+		return false
+
+	var neighbor_mines_cnt = count_neighbor_mines(pos)
+	var neighbor_flags_cnt = count_neighbor_flags(pos)
+
+	if neighbor_mines_cnt == 0 or neighbor_flags_cnt != neighbor_mines_cnt:
+		return false
+
+	var revealed_any = false
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var n_pos = pos + Vector2i(dx, dy)
+			var n_cell = get_cell(n_pos)
+			if not n_cell.is_revealed and not n_cell.is_flagged:
+				if reveal_cell(n_pos):
+					revealed_any = true
+
+	return revealed_any
+
+func world_to_cell(world_pos: Vector2) -> Vector2i:
+	return Vector2i(int(floor(world_pos.x / float(cell_size.x))), int(floor(world_pos.y / float(cell_size.y))))
+
+func _unhandled_input(event: InputEvent) -> void:
+	if is_game_over:
+		return
+
+	if event is InputEventMouseButton and event.pressed:
+		var cell_pos = world_to_cell(get_global_mouse_position())
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.double_click:
+				chord_reveal(cell_pos)
+			else:
+				reveal_cell(cell_pos)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			toggle_flag(cell_pos)
+		elif event.button_index == MOUSE_BUTTON_MIDDLE:
+			chord_reveal(cell_pos)
+
 func update_visible_area(rect: Rect2) -> void:
 	visible_rect = rect
-	queue_redraw()
+	_request_redraw()
+
+func _request_redraw() -> void:
+	if is_inside_tree():
+		queue_redraw()
 
 func _draw() -> void:
 	var min_tile_x = int(floor(visible_rect.position.x / float(cell_size.x))) - 1

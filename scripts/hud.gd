@@ -1,0 +1,181 @@
+class_name HUD
+extends CanvasLayer
+
+const DIFFICULTIES = [0.10, 0.15, 0.20]
+const DIFFICULTY_NAMES = ["Easy (10%)", "Medium (15%)", "Hard (20%)"]
+
+@export var grid_manager: GridManager
+
+var revealed_count: int = 0
+var flag_count: int = 0
+var elapsed_time: float = 0.0
+var is_timer_running: bool = false
+
+var explored_label: Label
+var flag_label: Label
+var time_label: Label
+var difficulty_option: OptionButton
+var restart_button: Button
+
+var game_over_modal: Control
+var game_over_stats_label: Label
+var play_again_button: Button
+
+func _ready() -> void:
+	setup_ui_nodes()
+	if grid_manager == null:
+		_auto_find_grid_manager()
+	else:
+		bind_grid_manager(grid_manager)
+
+func setup_ui_nodes() -> void:
+	if has_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel"):
+		explored_label = get_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel") as Label
+	elif explored_label == null:
+		explored_label = Label.new()
+
+	if has_node("TopBar/MarginContainer/HBoxContainer/FlagLabel"):
+		flag_label = get_node("TopBar/MarginContainer/HBoxContainer/FlagLabel") as Label
+	elif flag_label == null:
+		flag_label = Label.new()
+
+	if has_node("TopBar/MarginContainer/HBoxContainer/TimeLabel"):
+		time_label = get_node("TopBar/MarginContainer/HBoxContainer/TimeLabel") as Label
+	elif time_label == null:
+		time_label = Label.new()
+
+	if has_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption"):
+		difficulty_option = get_node("TopBar/MarginContainer/HBoxContainer/DifficultyOption") as OptionButton
+	elif difficulty_option == null:
+		difficulty_option = OptionButton.new()
+
+	if has_node("TopBar/MarginContainer/HBoxContainer/RestartButton"):
+		restart_button = get_node("TopBar/MarginContainer/HBoxContainer/RestartButton") as Button
+	elif restart_button == null:
+		restart_button = Button.new()
+
+	if has_node("GameOverModal"):
+		game_over_modal = get_node("GameOverModal") as Control
+	elif game_over_modal == null:
+		game_over_modal = Control.new()
+		game_over_modal.visible = false
+
+	if has_node("GameOverModal/Panel/VBoxContainer/StatsLabel"):
+		game_over_stats_label = get_node("GameOverModal/Panel/VBoxContainer/StatsLabel") as Label
+	elif game_over_stats_label == null:
+		game_over_stats_label = Label.new()
+
+	if has_node("GameOverModal/Panel/VBoxContainer/PlayAgainButton"):
+		play_again_button = get_node("GameOverModal/Panel/VBoxContainer/PlayAgainButton") as Button
+	elif play_again_button == null:
+		play_again_button = Button.new()
+
+	# Populate difficulty options if empty
+	if difficulty_option.item_count == 0:
+		for i in range(DIFFICULTY_NAMES.size()):
+			difficulty_option.add_item(DIFFICULTY_NAMES[i], i)
+		difficulty_option.selected = 1 # Default Medium
+
+	# Wire UI events
+	if not difficulty_option.is_connected("item_selected", Callable(self, "set_difficulty_by_index")):
+		difficulty_option.connect("item_selected", Callable(self, "set_difficulty_by_index"))
+	if not restart_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
+		restart_button.connect("pressed", Callable(self, "on_restart_pressed"))
+	if not play_again_button.is_connected("pressed", Callable(self, "on_restart_pressed")):
+		play_again_button.connect("pressed", Callable(self, "on_restart_pressed"))
+
+	_update_labels()
+
+func _auto_find_grid_manager() -> void:
+	if grid_manager != null:
+		return
+	if get_parent() != null and get_parent().has_node("GridManager"):
+		bind_grid_manager(get_parent().get_node("GridManager") as GridManager)
+
+func bind_grid_manager(grid: GridManager) -> void:
+	grid_manager = grid
+	if not grid.is_connected("cell_revealed", Callable(self, "_on_cell_revealed")):
+		grid.connect("cell_revealed", Callable(self, "_on_cell_revealed"))
+	if not grid.is_connected("cell_flag_changed", Callable(self, "_on_cell_flag_changed")):
+		grid.connect("cell_flag_changed", Callable(self, "_on_cell_flag_changed"))
+	if not grid.is_connected("game_over", Callable(self, "_on_game_over")):
+		grid.connect("game_over", Callable(self, "_on_game_over"))
+	if not grid.is_connected("game_reset", Callable(self, "_on_game_reset")):
+		grid.connect("game_reset", Callable(self, "_on_game_reset"))
+
+func _process(delta: float) -> void:
+	if is_timer_running:
+		elapsed_time += delta
+		_update_time_label()
+
+func format_time(seconds: float) -> String:
+	var total_sec = int(floor(seconds))
+	var minutes = total_sec / 60
+	var secs = total_sec % 60
+	return "%02d:%02d" % [minutes, secs]
+
+func _update_labels() -> void:
+	if explored_label != null:
+		explored_label.text = "Explored: %d" % revealed_count
+	if flag_label != null:
+		flag_label.text = "Flags: %d" % flag_count
+	_update_time_label()
+
+func _update_time_label() -> void:
+	if time_label != null:
+		time_label.text = "Time: " + format_time(elapsed_time)
+
+func _on_cell_revealed(_pos: Vector2i, is_mine: bool) -> void:
+	if not is_mine:
+		revealed_count += 1
+		if not is_timer_running:
+			is_timer_running = true
+		_update_labels()
+
+func _on_cell_flag_changed(_pos: Vector2i, is_flagged: bool) -> void:
+	if is_flagged:
+		flag_count += 1
+	else:
+		flag_count = max(0, flag_count - 1)
+	_update_labels()
+
+func _on_game_over(_hit_mine_pos: Vector2i) -> void:
+	is_timer_running = false
+	show_game_over()
+
+func _on_game_reset() -> void:
+	revealed_count = 0
+	flag_count = 0
+	elapsed_time = 0.0
+	is_timer_running = false
+	if game_over_modal != null:
+		game_over_modal.visible = false
+	_update_labels()
+
+func show_game_over() -> void:
+	if game_over_stats_label != null:
+		game_over_stats_label.text = "Explored: %d cells\nTime: %s" % [revealed_count, format_time(elapsed_time)]
+	if game_over_modal != null:
+		game_over_modal.visible = true
+
+func is_game_over_visible() -> bool:
+	return game_over_modal != null and game_over_modal.visible
+
+func get_game_over_stats_text() -> String:
+	if game_over_stats_label != null:
+		return game_over_stats_label.text
+	return "Explored: %d cells\nTime: %s" % [revealed_count, format_time(elapsed_time)]
+
+func on_restart_pressed() -> void:
+	_on_game_reset()
+	if grid_manager != null:
+		grid_manager.reset_game()
+
+func set_difficulty_by_index(index: int) -> void:
+	if index >= 0 and index < DIFFICULTIES.size():
+		var density = DIFFICULTIES[index]
+		if grid_manager != null:
+			grid_manager.reset_game(density)
+		_on_game_reset()
+		if difficulty_option != null and difficulty_option.selected != index:
+			difficulty_option.selected = index

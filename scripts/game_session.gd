@@ -65,6 +65,17 @@ func record_reveal(pos: Vector2i, is_mine: bool) -> void:
 			is_timer_running = true
 		stats_changed.emit(get_stats())
 
+func record_reveals_batch(revealed_positions: Array[Vector2i], mine_count: int = 0) -> void:
+	if is_game_over or revealed_positions.is_empty():
+		return
+
+	var safe_count = revealed_positions.size() - mine_count
+	if safe_count > 0:
+		revealed_count += safe_count
+		if not is_timer_running:
+			is_timer_running = true
+		stats_changed.emit(get_stats())
+
 func record_flag_toggle(_pos: Vector2i, is_flagged: bool) -> void:
 	if is_flagged:
 		flag_count += 1

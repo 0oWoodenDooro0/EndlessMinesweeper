@@ -124,17 +124,58 @@ func set_first_click(pos: Vector2i) -> void:
 			cell.is_mine = false
 			affected_chunks[chunk_manager.cell_to_chunk(p)] = true
 
+	# Invalidate neighbor mines cache for safe zone and its immediate perimeter
+	for dx in range(-safe_zone_radius - 1, safe_zone_radius + 2):
+		for dy in range(-safe_zone_radius - 1, safe_zone_radius + 2):
+			var p = pos + Vector2i(dx, dy)
+			if grid_data.has(p):
+				grid_data[p].neighbor_mines_cached = false
+
 	for c_pos in affected_chunks:
 		chunk_manager.recalculate_chunk_safe_cells(c_pos)
+
+	preload_surrounding_chunks(chunk_manager.cell_to_chunk(pos), 2)
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
 	if chunk_manager.is_cell_in_cleared_chunk(pos):
 		return
 	var cell = get_cell(pos)
 	cell.is_mine = mine_state
+
+	# Invalidate neighbor mines cache for pos and its 8-neighbors
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			var p = pos + Vector2i(dx, dy)
+			if grid_data.has(p):
+				grid_data[p].neighbor_mines_cached = false
+
 	chunk_manager.recalculate_chunk_safe_cells(chunk_manager.cell_to_chunk(pos))
 
+func preload_surrounding_chunks(center_chunk_pos: Vector2i, radius: int = 1) -> void:
+	var min_c = center_chunk_pos - Vector2i(radius, radius)
+	var max_c = center_chunk_pos + Vector2i(radius, radius)
+	chunk_manager.preload_chunks_in_rect(min_c, max_c)
+
+func preload_chunks_around_viewport(buffer_chunks: int = 1) -> void:
+	var chunk_pixel_size = Vector2(chunk_size.x * cell_size.x, chunk_size.y * cell_size.y)
+	if chunk_pixel_size.x <= 0 or chunk_pixel_size.y <= 0:
+		return
+	var min_chunk_x = int(floor(visible_rect.position.x / chunk_pixel_size.x)) - buffer_chunks
+	var min_chunk_y = int(floor(visible_rect.position.y / chunk_pixel_size.y)) - buffer_chunks
+	var max_chunk_x = int(ceil(visible_rect.end.x / chunk_pixel_size.x)) + buffer_chunks
+	var max_chunk_y = int(ceil(visible_rect.end.y / chunk_pixel_size.y)) + buffer_chunks
+	chunk_manager.preload_chunks_in_rect(Vector2i(min_chunk_x, min_chunk_y), Vector2i(max_chunk_x, max_chunk_y))
+
 func count_neighbor_mines(pos: Vector2i) -> int:
+	var cell: CellData
+	if grid_data.has(pos):
+		cell = grid_data[pos]
+	else:
+		cell = get_cell(pos)
+
+	if cell.neighbor_mines_cached:
+		return cell.neighbor_mines
+
 	var count = 0
 	for dx in [-1, 0, 1]:
 		for dy in [-1, 0, 1]:
@@ -143,7 +184,11 @@ func count_neighbor_mines(pos: Vector2i) -> int:
 			var n_pos = pos + Vector2i(dx, dy)
 			if is_mine_at(n_pos):
 				count += 1
+
+	cell.neighbor_mines = count
+	cell.neighbor_mines_cached = true
 	return count
+
 
 func count_neighbor_flags(pos: Vector2i) -> int:
 	var count = 0
@@ -205,6 +250,8 @@ func reveal_cell(pos: Vector2i) -> bool:
 	if not has_first_clicked:
 		set_first_click(pos)
 
+	preload_surrounding_chunks(chunk_manager.cell_to_chunk(pos), 1)
+
 	# Ensure chunk is initialized before marking cell as revealed
 	var chunk = chunk_manager.get_chunk_for_cell(pos)
 
@@ -233,6 +280,7 @@ func reveal_cell(pos: Vector2i) -> bool:
 func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 	var queue: Array[Vector2i] = [start_pos]
 	var visited: Dictionary = {start_pos: true}
+	var batch_reveals: Array[Vector2i] = []
 
 	while queue.size() > 0:
 		var curr_pos = queue.pop_front()
@@ -256,13 +304,15 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 
 				n_cell.is_revealed = true
 				cell_revealed.emit(n_pos, n_cell.is_mine)
-				if session != null:
-					session.record_reveal(n_pos, n_cell.is_mine)
+				batch_reveals.append(n_pos)
 
 				if not n_cell.is_mine:
 					chunk_manager.register_reveal(n_pos, false, enable_chunk_lockout)
 					if count_neighbor_mines(n_pos) == 0:
 						queue.append(n_pos)
+
+	if session != null and batch_reveals.size() > 0:
+		session.record_reveals_batch(batch_reveals, 0)
 
 func _auto_flag_chunk_mines(c_pos: Vector2i) -> void:
 	var mine_positions = chunk_manager.get_chunk_mine_positions(c_pos)
@@ -431,6 +481,7 @@ func is_lod_active() -> bool:
 func update_visible_area(rect: Rect2, zoom_level: float = 1.0) -> void:
 	visible_rect = rect
 	current_zoom_level = zoom_level
+	preload_chunks_around_viewport(1)
 	_request_redraw()
 
 func _request_redraw() -> void:

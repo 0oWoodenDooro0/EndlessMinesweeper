@@ -218,7 +218,6 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 				if chunk_manager.is_cell_in_locked_chunk(n_pos) or chunk_manager.is_cell_in_cleared_chunk(n_pos):
 					continue
 
-
 				var n_cell = get_cell(n_pos)
 				if n_cell.is_flagged or n_cell.is_revealed:
 					continue

@@ -54,7 +54,6 @@ func is_cell_in_locked_chunk(cell_pos: Vector2i) -> bool:
 func is_cell_in_cleared_chunk(cell_pos: Vector2i) -> bool:
 	return is_chunk_cleared(cell_to_chunk(cell_pos))
 
-
 func _calculate_chunk_safe_cells(chunk: ChunkData) -> void:
 	var safe_count = 0
 	var revealed_count = 0

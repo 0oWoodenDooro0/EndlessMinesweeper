@@ -4,6 +4,8 @@ extends Node2D
 signal cell_revealed(pos: Vector2i, is_mine: bool)
 signal cell_flag_changed(pos: Vector2i, is_flagged: bool)
 signal game_over(hit_mine_pos: Vector2i)
+signal game_reset
+
 
 @export var world_seed: int = 1337
 @export var mine_density: float = 0.15
@@ -26,11 +28,11 @@ func get_cell(pos: Vector2i) -> CellData:
 	return cell
 
 func is_mine_at(pos: Vector2i) -> bool:
-	if is_in_safe_zone(pos):
-		return false
-
 	if grid_data.has(pos):
 		return grid_data[pos].is_mine
+
+	if is_in_safe_zone(pos):
+		return false
 
 	return _calc_hash_mine(pos)
 
@@ -58,6 +60,8 @@ func set_first_click(pos: Vector2i) -> void:
 			cell.is_mine = false
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
+	has_first_clicked = true
+	first_click_pos = Vector2i(-999999, -999999)
 	var cell = get_cell(pos)
 	cell.is_mine = mine_state
 
@@ -82,6 +86,20 @@ func count_neighbor_flags(pos: Vector2i) -> int:
 			if get_cell(n_pos).is_flagged:
 				count += 1
 	return count
+
+func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
+	has_first_clicked = false
+	first_click_pos = Vector2i.ZERO
+	is_game_over = false
+	if new_density > 0.0:
+		mine_density = new_density
+	if new_seed >= 0:
+		world_seed = new_seed
+	else:
+		world_seed = randi() & 0x7FFFFFFF
+	grid_data.clear()
+	game_reset.emit()
+	_request_redraw()
 
 func reveal_cell(pos: Vector2i) -> bool:
 	if is_game_over:

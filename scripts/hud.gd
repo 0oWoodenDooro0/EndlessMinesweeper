@@ -1,21 +1,64 @@
 class_name HUD
 extends CanvasLayer
 
+const GameSession = preload("res://scripts/game_session.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 
-const DIFFICULTIES = [0.10, 0.15, 0.20]
-const DIFFICULTY_NAMES = ["Easy (10%)", "Medium (15%)", "Hard (20%)"]
+const DIFFICULTIES = GameSession.DIFFICULTIES
+const DIFFICULTY_NAMES = GameSession.DIFFICULTY_NAMES
 
 @export var grid_manager: GridManager
 @export var camera_controller: CameraController
 
-var revealed_count: int = 0
-var flag_count: int = 0
-var cleared_chunks_count: int = 0
-var locked_chunks_count: int = 0
-var elapsed_time: float = 0.0
-var is_timer_running: bool = false
+var session: GameSession = GameSession.new()
+
+var revealed_count: int:
+	get:
+		return session.revealed_count if session != null else 0
+	set(val):
+		if session != null:
+			session.revealed_count = val
+			_update_labels()
+
+var flag_count: int:
+	get:
+		return session.flag_count if session != null else 0
+	set(val):
+		if session != null:
+			session.flag_count = val
+			_update_labels()
+
+var cleared_chunks_count: int:
+	get:
+		return session.cleared_chunks_count if session != null else 0
+	set(val):
+		if session != null:
+			session.cleared_chunks_count = val
+			_update_labels()
+
+var locked_chunks_count: int:
+	get:
+		return session.locked_chunks_count if session != null else 0
+	set(val):
+		if session != null:
+			session.locked_chunks_count = val
+			_update_labels()
+
+var elapsed_time: float:
+	get:
+		return session.elapsed_time if session != null else 0.0
+	set(val):
+		if session != null:
+			session.elapsed_time = val
+			_update_time_label()
+
+var is_timer_running: bool:
+	get:
+		return session.is_timer_running if session != null else false
+	set(val):
+		if session != null:
+			session.is_timer_running = val
 
 var explored_label: Label
 var flag_label: Label
@@ -28,14 +71,20 @@ var game_over_modal: Control
 var game_over_stats_label: Label
 var play_again_button: Button
 
+func _init() -> void:
+	_connect_session_signals()
+
 func _ready() -> void:
 	setup_ui_nodes()
+	_connect_session_signals()
 	if grid_manager == null:
 		_auto_find_grid_manager()
 	else:
 		bind_grid_manager(grid_manager)
 
 func setup_ui_nodes() -> void:
+	_connect_session_signals()
+
 	if has_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel"):
 		explored_label = get_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel") as Label
 	elif explored_label == null:
@@ -86,7 +135,7 @@ func setup_ui_nodes() -> void:
 	if difficulty_option.item_count == 0:
 		for i in range(DIFFICULTY_NAMES.size()):
 			difficulty_option.add_item(DIFFICULTY_NAMES[i], i)
-		difficulty_option.selected = 1 # Default Medium
+		difficulty_option.selected = session.difficulty_index if session != null else 1
 
 	# Wire UI events
 	if not difficulty_option.is_connected("item_selected", Callable(self, "set_difficulty_by_index")):
@@ -98,6 +147,41 @@ func setup_ui_nodes() -> void:
 
 	_update_labels()
 
+func bind_session(new_session: GameSession) -> void:
+	if session != null and session != new_session:
+		_disconnect_session_signals()
+	session = new_session
+	_connect_session_signals()
+	if difficulty_option != null and session != null:
+		difficulty_option.selected = session.difficulty_index
+	if grid_manager != null and grid_manager.session != session:
+		grid_manager.bind_session(session)
+	_update_labels()
+
+func _connect_session_signals() -> void:
+	if session == null:
+		return
+	if not session.is_connected("stats_changed", Callable(self, "_on_session_stats_changed")):
+		session.connect("stats_changed", Callable(self, "_on_session_stats_changed"))
+	if not session.is_connected("game_over", Callable(self, "_on_session_game_over")):
+		session.connect("game_over", Callable(self, "_on_session_game_over"))
+	if not session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
+		session.connect("game_reset", Callable(self, "_on_session_game_reset"))
+	if not session.is_connected("difficulty_changed", Callable(self, "_on_session_difficulty_changed")):
+		session.connect("difficulty_changed", Callable(self, "_on_session_difficulty_changed"))
+
+func _disconnect_session_signals() -> void:
+	if session == null:
+		return
+	if session.is_connected("stats_changed", Callable(self, "_on_session_stats_changed")):
+		session.disconnect("stats_changed", Callable(self, "_on_session_stats_changed"))
+	if session.is_connected("game_over", Callable(self, "_on_session_game_over")):
+		session.disconnect("game_over", Callable(self, "_on_session_game_over"))
+	if session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
+		session.disconnect("game_reset", Callable(self, "_on_session_game_reset"))
+	if session.is_connected("difficulty_changed", Callable(self, "_on_session_difficulty_changed")):
+		session.disconnect("difficulty_changed", Callable(self, "_on_session_difficulty_changed"))
+
 func _auto_find_grid_manager() -> void:
 	if grid_manager != null:
 		return
@@ -106,24 +190,12 @@ func _auto_find_grid_manager() -> void:
 
 func bind_grid_manager(grid: GridManager) -> void:
 	grid_manager = grid
-	if not grid.is_connected("cell_revealed", Callable(self, "_on_cell_revealed")):
-		grid.connect("cell_revealed", Callable(self, "_on_cell_revealed"))
-	if not grid.is_connected("cell_flag_changed", Callable(self, "_on_cell_flag_changed")):
-		grid.connect("cell_flag_changed", Callable(self, "_on_cell_flag_changed"))
-	if not grid.is_connected("game_over", Callable(self, "_on_game_over")):
-		grid.connect("game_over", Callable(self, "_on_game_over"))
-	if not grid.is_connected("game_reset", Callable(self, "_on_game_reset")):
-		grid.connect("game_reset", Callable(self, "_on_game_reset"))
-	if not grid.is_connected("chunk_locked", Callable(self, "_on_chunk_locked")):
-		grid.connect("chunk_locked", Callable(self, "_on_chunk_locked"))
-	if not grid.is_connected("chunk_cleared", Callable(self, "_on_chunk_cleared")):
-		grid.connect("chunk_cleared", Callable(self, "_on_chunk_cleared"))
-	if not grid.is_connected("chunk_unlocked", Callable(self, "_on_chunk_unlocked")):
-		grid.connect("chunk_unlocked", Callable(self, "_on_chunk_unlocked"))
+	if grid_manager != null:
+		grid_manager.bind_session(session)
 
 func _process(delta: float) -> void:
-	if is_timer_running:
-		elapsed_time += delta
+	if session != null and session.is_timer_running:
+		session.update(delta)
 		_update_time_label()
 
 func format_time(seconds: float) -> String:
@@ -145,48 +217,20 @@ func _update_time_label() -> void:
 	if time_label != null:
 		time_label.text = "Time: " + format_time(elapsed_time)
 
-func _on_cell_revealed(_pos: Vector2i, is_mine: bool) -> void:
-	if not is_mine:
-		revealed_count += 1
-		if not is_timer_running:
-			is_timer_running = true
-		_update_labels()
-
-func _on_cell_flag_changed(_pos: Vector2i, is_flagged: bool) -> void:
-	if is_flagged:
-		flag_count += 1
-	else:
-		flag_count = max(0, flag_count - 1)
+func _on_session_stats_changed(_stats: Dictionary) -> void:
 	_update_labels()
 
-func _on_chunk_locked(_chunk_pos: Vector2i, _mine_pos: Vector2i) -> void:
-	locked_chunks_count += 1
-	if not is_timer_running:
-		is_timer_running = true
-	_update_labels()
-
-func _on_chunk_cleared(_chunk_pos: Vector2i) -> void:
-	cleared_chunks_count += 1
-	_update_labels()
-
-func _on_chunk_unlocked(_chunk_pos: Vector2i, _recovered_flags: Array[Vector2i]) -> void:
-	locked_chunks_count = max(0, locked_chunks_count - 1)
-	_update_labels()
-
-func _on_game_over(_hit_mine_pos: Vector2i) -> void:
-	is_timer_running = false
+func _on_session_game_over(_hit_mine_pos: Vector2i) -> void:
 	show_game_over()
 
-func _on_game_reset() -> void:
-	revealed_count = 0
-	flag_count = 0
-	cleared_chunks_count = 0
-	locked_chunks_count = 0
-	elapsed_time = 0.0
-	is_timer_running = false
+func _on_session_game_reset() -> void:
 	if game_over_modal != null:
 		game_over_modal.visible = false
 	_update_labels()
+
+func _on_session_difficulty_changed(_density: float, index: int) -> void:
+	if difficulty_option != null and difficulty_option.selected != index:
+		difficulty_option.selected = index
 
 func show_game_over() -> void:
 	if game_over_stats_label != null:
@@ -203,48 +247,38 @@ func get_game_over_stats_text() -> String:
 	return "Explored: %d cells\nTime: %s" % [revealed_count, format_time(elapsed_time)]
 
 func on_restart_pressed() -> void:
-	_on_game_reset()
+	if session != null:
+		session.reset()
 	if grid_manager != null:
 		grid_manager.reset_game()
 
 func set_difficulty_by_index(index: int) -> void:
-	if index >= 0 and index < DIFFICULTIES.size():
-		var density = DIFFICULTIES[index]
+	if session != null:
+		session.set_difficulty_by_index(index)
 		if grid_manager != null:
-			grid_manager.reset_game(density)
-		_on_game_reset()
+			grid_manager.reset_game(session.mine_density)
 		if difficulty_option != null and difficulty_option.selected != index:
 			difficulty_option.selected = index
 
 func sync_difficulty_with_density(density: float) -> void:
-	for i in range(DIFFICULTIES.size()):
-		if is_equal_approx(DIFFICULTIES[i], density):
-			if difficulty_option != null:
-				difficulty_option.selected = i
-			return
+	if session != null:
+		session.sync_difficulty_with_density(density)
+		if difficulty_option != null and difficulty_option.selected != session.difficulty_index:
+			difficulty_option.selected = session.difficulty_index
 
 func serialize() -> Dictionary:
-	var diff_idx = difficulty_option.selected if difficulty_option != null else 1
-	return {
-		"revealed_count": revealed_count,
-		"flag_count": flag_count,
-		"cleared_chunks_count": cleared_chunks_count,
-		"locked_chunks_count": locked_chunks_count,
-		"elapsed_time": elapsed_time,
-		"is_timer_running": is_timer_running,
-		"difficulty_index": diff_idx
-	}
+	var diff_idx = difficulty_option.selected if difficulty_option != null else (session.difficulty_index if session != null else 1)
+	var data = session.serialize() if session != null else {}
+	data["difficulty_index"] = diff_idx
+	return data
 
 func deserialize(data: Dictionary) -> bool:
 	if data == null or not data.has("revealed_count"):
 		return false
 
-	revealed_count = int(data.get("revealed_count", 0))
-	flag_count = int(data.get("flag_count", 0))
-	cleared_chunks_count = int(data.get("cleared_chunks_count", 0))
-	locked_chunks_count = int(data.get("locked_chunks_count", 0))
-	elapsed_time = float(data.get("elapsed_time", 0.0))
-	is_timer_running = bool(data.get("is_timer_running", false))
+	var success = session.deserialize(data) if session != null else false
+	if not success:
+		return false
 
 	if data.has("difficulty_index"):
 		var idx = int(data["difficulty_index"])
@@ -255,4 +289,3 @@ func deserialize(data: Dictionary) -> bool:
 
 	_update_labels()
 	return true
-

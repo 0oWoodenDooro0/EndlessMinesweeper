@@ -1,6 +1,8 @@
 class_name GridManager
 extends Node2D
 
+const GameSession = preload("res://scripts/game_session.gd")
+
 signal cell_revealed(pos: Vector2i, is_mine: bool)
 signal cell_flag_changed(pos: Vector2i, is_flagged: bool)
 signal game_over(hit_mine_pos: Vector2i)
@@ -16,12 +18,17 @@ signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 @export var chunk_size: Vector2i = Vector2i(8, 8)
 @export var enable_chunk_lockout: bool = true
 
+var session: GameSession = null
 var has_first_clicked: bool = false
 var first_click_pos: Vector2i = Vector2i.ZERO
 var is_game_over: bool = false
 var grid_data: Dictionary = {} # Vector2i -> CellData
 var chunks: Dictionary = {} # Vector2i -> ChunkData
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
+
+func bind_session(sess: GameSession) -> void:
+	session = sess
+
 
 func cell_to_chunk(cell_pos: Vector2i) -> Vector2i:
 	return Vector2i(
@@ -150,6 +157,8 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 		world_seed = randi() & 0x7FFFFFFF
 	grid_data.clear()
 	chunks.clear()
+	if session != null:
+		session.reset(new_density)
 	game_reset.emit()
 	_request_redraw()
 
@@ -170,6 +179,8 @@ func reveal_cell(pos: Vector2i) -> bool:
 
 	cell.is_revealed = true
 	cell_revealed.emit(pos, cell.is_mine)
+	if session != null:
+		session.record_reveal(pos, cell.is_mine)
 
 	if cell.is_mine:
 		if enable_chunk_lockout:
@@ -177,11 +188,15 @@ func reveal_cell(pos: Vector2i) -> bool:
 			if not chunk.locked_mine_positions.has(pos):
 				chunk.locked_mine_positions.append(pos)
 			chunk_locked.emit(chunk.chunk_pos, pos)
+			if session != null:
+				session.record_chunk_locked(chunk.chunk_pos, pos)
 			_request_redraw()
 			return true
 		else:
 			is_game_over = true
 			game_over.emit(pos)
+			if session != null:
+				session.trigger_game_over(pos)
 			_request_redraw()
 			return true
 
@@ -219,6 +234,8 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 
 				n_cell.is_revealed = true
 				cell_revealed.emit(n_pos, n_cell.is_mine)
+				if session != null:
+					session.record_reveal(n_pos, n_cell.is_mine)
 
 				if not n_cell.is_mine:
 					n_chunk.revealed_safe_cells += 1
@@ -226,11 +243,14 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 					if count_neighbor_mines(n_pos) == 0:
 						queue.append(n_pos)
 
+
 func _check_chunk_cleared(chunk: ChunkData) -> void:
 	if not chunk.is_cleared and chunk.total_safe_cells > 0 and chunk.revealed_safe_cells >= chunk.total_safe_cells:
 		chunk.is_cleared = true
 		_auto_flag_chunk_mines(chunk)
 		chunk_cleared.emit(chunk.chunk_pos)
+		if session != null:
+			session.record_chunk_cleared(chunk.chunk_pos)
 		_check_neighbors_unlock(chunk.chunk_pos)
 
 func _auto_flag_chunk_mines(chunk: ChunkData) -> void:
@@ -244,6 +264,8 @@ func _auto_flag_chunk_mines(chunk: ChunkData) -> void:
 				if not cell.is_flagged:
 					cell.is_flagged = true
 					cell_flag_changed.emit(pos, true)
+					if session != null:
+						session.record_flag_toggle(pos, true)
 
 func _check_neighbors_unlock(cleared_chunk_pos: Vector2i) -> void:
 	var processed_clusters: Dictionary = {}
@@ -311,8 +333,12 @@ func _try_unlock_locked_cluster(start_c_pos: Vector2i, processed_clusters: Dicti
 				m_cell.is_flagged = true
 				recovered.append(m_pos)
 				cell_flag_changed.emit(m_pos, true)
+				if session != null:
+					session.record_flag_toggle(m_pos, true)
 			ch.locked_mine_positions.clear()
 			chunk_unlocked.emit(c_member, recovered)
+			if session != null:
+				session.record_chunk_unlocked(c_member, recovered)
 		_request_redraw()
 
 func toggle_flag(pos: Vector2i) -> void:
@@ -329,7 +355,10 @@ func toggle_flag(pos: Vector2i) -> void:
 
 	cell.is_flagged = not cell.is_flagged
 	cell_flag_changed.emit(pos, cell.is_flagged)
+	if session != null:
+		session.record_flag_toggle(pos, cell.is_flagged)
 	_request_redraw()
+
 
 func chord_reveal(pos: Vector2i) -> bool:
 	if is_game_over:

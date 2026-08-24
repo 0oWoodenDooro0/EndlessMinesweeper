@@ -108,6 +108,18 @@ func get_chunk_mine_positions(c_pos: Vector2i) -> Array[Vector2i]:
 				mines.append(p)
 	return mines
 
+func get_chunk_safe_positions(c_pos: Vector2i) -> Array[Vector2i]:
+	var safe_positions: Array[Vector2i] = []
+	var min_x = c_pos.x * chunk_size.x
+	var min_y = c_pos.y * chunk_size.y
+	for x in range(min_x, min_x + chunk_size.x):
+		for y in range(min_y, min_y + chunk_size.y):
+			var p = Vector2i(x, y)
+			if is_mine_provider.is_valid() and is_mine_provider.call(p):
+				continue
+			safe_positions.append(p)
+	return safe_positions
+
 func register_reveal(cell_pos: Vector2i, is_mine: bool, enable_chunk_lockout: bool = true) -> Dictionary:
 	var chunk = get_chunk_for_cell(cell_pos)
 

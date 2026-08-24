@@ -407,6 +407,25 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 	if session != null and batch_reveals.size() > 0:
 		session.record_reveals_batch(batch_reveals, 0)
 
+func _auto_reveal_chunk_safe_cells(c_pos: Vector2i) -> void:
+	if chunk_manager == null:
+		return
+	var safe_positions = chunk_manager.get_chunk_safe_positions(c_pos)
+	for pos in safe_positions:
+		var cell = get_cell(pos)
+		if cell.is_flagged:
+			cell.is_flagged = false
+			cell_flag_changed.emit(pos, false)
+			if session != null:
+				session.record_flag_toggle(pos, false)
+		if not cell.is_revealed:
+			cell.is_revealed = true
+			cell_revealed.emit(pos, false)
+			if session != null:
+				session.record_reveal(pos, false)
+			if count_neighbor_mines(pos) == 0:
+				_expand_zero_mines_bfs(pos)
+
 func _auto_flag_chunk_mines(c_pos: Vector2i) -> void:
 	var mine_positions = chunk_manager.get_chunk_mine_positions(c_pos)
 	for pos in mine_positions:
@@ -424,10 +443,12 @@ func _on_chunk_manager_locked(c_pos: Vector2i, m_pos: Vector2i) -> void:
 	_request_redraw()
 
 func _on_chunk_manager_cleared(c_pos: Vector2i) -> void:
+	_auto_reveal_chunk_safe_cells(c_pos)
 	_auto_flag_chunk_mines(c_pos)
 	chunk_cleared.emit(c_pos)
 	if session != null:
 		session.record_chunk_cleared(c_pos)
+	_request_redraw()
 
 func _on_chunk_manager_unlocked(c_pos: Vector2i, recovered_mines: Array[Vector2i]) -> void:
 	for m_pos in recovered_mines:

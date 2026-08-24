@@ -53,6 +53,10 @@ func _init():
 	if not test_cleared_chunk_interactions_blocked():
 		success = false
 
+	# Test 12: Auto-reveal Safe Cells, Misplaced Flag Cleanup & Zero BFS Cascade on Chunk Clear
+	if not test_auto_reveal_safe_cells_on_chunk_clear():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -912,6 +916,135 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 
 	grid.free()
 	print("[PASS] Test 11: Cleared chunk interactions blocked verified")
+	return true
+
+func test_auto_reveal_safe_cells_on_chunk_clear() -> bool:
+	print("[RUN] Test 12: Auto-reveal Safe Cells, Misplaced Flag Cleanup & Zero BFS Cascade on Chunk Clear")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.set_first_click(Vector2i(100, 100))
+
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# --- Subtest A: Misplaced Flag Removal, Safe Cell Auto-Reveal & Mine Auto-Flag ---
+	# Setup Chunk (0, 0): Mines at (0, 0) and (1, 1), Safe cells at (1, 0) and (0, 1)
+	var m1 = Vector2i(0, 0)
+	var m2 = Vector2i(1, 1)
+	var s1 = Vector2i(1, 0)
+	var s2 = Vector2i(0, 1)
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(m2, true)
+	grid.set_mine_at(s1, false)
+	grid.set_mine_at(s2, false)
+	grid.get_cell(Vector2i(0, 2)).is_revealed = true # Anchor for s2
+	grid.get_cell(Vector2i(2, 0)).is_revealed = true # Anchor for s1
+
+	# Player places a mistaken flag on safe cell s2 (0, 1)
+	grid.toggle_flag(s2)
+	if hud.flag_count != 1:
+		print("[FAIL] Initial misplaced flag not counted in HUD: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	var unflag_signals: Array[Vector2i] = []
+	var reveal_signals: Array[Vector2i] = []
+	grid.connect("cell_flag_changed", func(pos: Vector2i, is_flagged: bool):
+		if not is_flagged:
+			unflag_signals.append(pos)
+	)
+	grid.connect("cell_revealed", func(pos: Vector2i, _is_mine: bool):
+		reveal_signals.append(pos)
+	)
+
+	# Reveal s1 (1, 0)
+	grid.reveal_cell(s1)
+
+	# Simulate / Trigger chunk clear event for Chunk (0, 0)
+	grid._on_chunk_manager_cleared(Vector2i(0, 0))
+
+	# Verify misplaced flag on s2 (0, 1) was cleared
+	var cell_s2 = grid.get_cell(s2)
+	if cell_s2.is_flagged:
+		print("[FAIL] Misplaced flag on s2 (0, 1) should be removed")
+		hud.free()
+		grid.free()
+		return false
+	if not cell_s2.is_revealed:
+		print("[FAIL] Safe cell s2 (0, 1) should be revealed")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify unflag signal emitted for s2
+	if not unflag_signals.has(s2):
+		print("[FAIL] cell_flag_changed(s2, false) was not emitted: ", unflag_signals)
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify mines m1 and m2 are auto-flagged
+	var cell_m1 = grid.get_cell(m1)
+	var cell_m2 = grid.get_cell(m2)
+	if not cell_m1.is_flagged or not cell_m2.is_flagged:
+		print("[FAIL] Mines m1/m2 were not auto-flagged properly")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify HUD count: exactly 2 flags (m1, m2), 0 misplaced flags
+	if hud.flag_count != 2:
+		print("[FAIL] HUD flag_count should be 2 after chunk auto-reveal and auto-flag, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify HUD revealed count: both s1 and s2 are revealed
+	if hud.revealed_count != 2:
+		print("[FAIL] HUD revealed_count should be 2, got: ", hud.revealed_count)
+		hud.free()
+		grid.free()
+		return false
+
+	hud.free()
+	grid.free()
+
+	# --- Subtest B: Zero-Mine BFS Cascade from Auto-revealed Safe Cell ---
+	var grid2 = GridManager.new()
+	grid2.chunk_size = Vector2i(2, 2)
+	grid2.set_first_click(Vector2i(100, 100))
+
+	# All cells in Chunk (0, 0) and perimeter set to safe (0 mines)
+	for x in range(-1, 3):
+		for y in range(-1, 3):
+			grid2.set_mine_at(Vector2i(x, y), false)
+	grid2.get_cell(Vector2i(-1, 0)).is_revealed = true # Anchor
+
+	# Neighbor chunk (1, 0): safe cell at (2, 0), mine at (3, 0)
+	grid2.set_mine_at(Vector2i(3, 0), true) # Mine in chunk (1, 0)
+
+	# Trigger clear on Chunk (0, 0)
+	grid2._on_chunk_manager_cleared(Vector2i(0, 0))
+
+	# All cells in Chunk (0, 0) should be revealed
+	for x in range(2):
+		for y in range(2):
+			if not grid2.get_cell(Vector2i(x, y)).is_revealed:
+				print("[FAIL] Cell (", x, ", ", y, ") in cleared chunk was not auto-revealed")
+				grid2.free()
+				return false
+
+	# Due to 0-neighbor BFS expansion, adjacent safe cell (2, 0) in Chunk (1, 0) should also be revealed
+	if not grid2.get_cell(Vector2i(2, 0)).is_revealed:
+		print("[FAIL] BFS cascade failed to expand to adjacent chunk cell (2, 0)")
+		grid2.free()
+		return false
+
+	grid2.free()
+	print("[PASS] Test 12: Auto-reveal safe cells, misplaced flag cleanup & zero BFS cascade verified")
 	return true
 
 

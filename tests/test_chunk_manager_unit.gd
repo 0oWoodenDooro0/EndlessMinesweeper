@@ -40,6 +40,10 @@ func _init():
 	if not test_is_cell_in_cleared_chunk_query():
 		success = false
 
+	# Test 9: get_chunk_safe_positions Query
+	if not test_get_chunk_safe_positions():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL CHUNK MANAGER UNIT TESTS PASSED")
@@ -493,5 +497,69 @@ func test_is_cell_in_cleared_chunk_query() -> bool:
 		return false
 
 	print("[PASS] Test 8: is_cell_in_cleared_chunk query verified")
+	return true
+
+func test_get_chunk_safe_positions() -> bool:
+	print("[RUN] Test 9: get_chunk_safe_positions Query")
+	var mines: Dictionary = {
+		Vector2i(0, 0): true,
+		Vector2i(1, 1): true
+	}
+	var is_mine_cb = func(pos: Vector2i) -> bool:
+		return mines.get(pos, false)
+
+	var cm = ChunkManager.new()
+	cm.setup(Vector2i(2, 2), is_mine_cb) # Chunk (0, 0) has cells (0,0)[M], (1,0)[S], (0,1)[S], (1,1)[M]
+
+	# 1. Check Chunk (0, 0)
+	var safe_pos_00 = cm.get_chunk_safe_positions(Vector2i(0, 0))
+	if safe_pos_00.size() != 2:
+		print("[FAIL] Expected 2 safe positions in chunk (0, 0), got: ", safe_pos_00.size())
+		return false
+	if not safe_pos_00.has(Vector2i(1, 0)) or not safe_pos_00.has(Vector2i(0, 1)):
+		print("[FAIL] Safe positions missing expected coordinates: ", safe_pos_00)
+		return false
+	if safe_pos_00.has(Vector2i(0, 0)) or safe_pos_00.has(Vector2i(1, 1)):
+		print("[FAIL] Safe positions contains mine coordinates: ", safe_pos_00)
+		return false
+
+	# 2. Check Chunk (1, 1) where no mines exist
+	var safe_pos_11 = cm.get_chunk_safe_positions(Vector2i(1, 1))
+	if safe_pos_11.size() != 4:
+		print("[FAIL] Expected 4 safe positions in chunk (1, 1), got: ", safe_pos_11.size())
+		return false
+	for x in range(2, 4):
+		for y in range(2, 4):
+			if not safe_pos_11.has(Vector2i(x, y)):
+				print("[FAIL] Safe positions missing coordinate (", x, ", ", y, ")")
+				return false
+
+	# 3. Check Chunk (-1, -1) negative coordinates
+	mines[Vector2i(-1, -1)] = true
+	var safe_pos_neg = cm.get_chunk_safe_positions(Vector2i(-1, -1))
+	if safe_pos_neg.size() != 3:
+		print("[FAIL] Expected 3 safe positions in chunk (-1, -1), got: ", safe_pos_neg.size())
+		return false
+	if safe_pos_neg.has(Vector2i(-1, -1)):
+		print("[FAIL] Chunk (-1, -1) safe positions should not contain mine (-1, -1)")
+		return false
+
+	# 4. Partition property: safe_positions disjoint union with mine_positions equals entire chunk
+	cm.setup(Vector2i(8, 8), is_mine_cb)
+	mines.clear()
+	mines[Vector2i(2, 3)] = true
+	mines[Vector2i(5, 7)] = true
+	mines[Vector2i(0, 0)] = true
+	var safe_8x8 = cm.get_chunk_safe_positions(Vector2i(0, 0))
+	var mines_8x8 = cm.get_chunk_mine_positions(Vector2i(0, 0))
+	if safe_8x8.size() + mines_8x8.size() != 64:
+		print("[FAIL] Safe + Mine count (", safe_8x8.size(), "+", mines_8x8.size(), ") != 64")
+		return false
+	for p in safe_8x8:
+		if mines_8x8.has(p):
+			print("[FAIL] Overlap between safe and mine positions at: ", p)
+			return false
+
+	print("[PASS] Test 9: get_chunk_safe_positions verified")
 	return true
 

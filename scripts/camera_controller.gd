@@ -67,7 +67,8 @@ func update_camera(delta: float) -> void:
 
 func _notify_grid_manager() -> void:
 	if grid_manager != null:
-		grid_manager.update_visible_area(get_visible_world_rect())
+		var current_zoom_val = zoom.x if zoom.x > 0 else 1.0
+		grid_manager.update_visible_area(get_visible_world_rect(), current_zoom_val)
 
 func get_visible_world_rect() -> Rect2:
 	var vp_size = custom_viewport_size

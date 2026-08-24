@@ -23,7 +23,11 @@ signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 		if chunk_manager != null:
 			chunk_manager.chunk_size = value
 @export var enable_chunk_lockout: bool = true
+@export var lod_zoom_threshold: float = 0.45
+@export var custom_font: Font = null
 
+var _default_msdf_font: Font = null
+var current_zoom_level: float = 1.0
 var session: GameSession = null
 var has_first_clicked: bool = false
 var first_click_pos: Vector2i = Vector2i.ZERO
@@ -290,7 +294,7 @@ func chord_reveal(pos: Vector2i) -> bool:
 	if is_game_over:
 		return false
 
-	if chunk_manager.is_cell_in_locked_chunk(pos) or chunk_manager.is_cell_in_cleared_chunk(pos):
+	if chunk_manager.is_cell_in_locked_chunk(pos):
 		return false
 
 	var cell = get_cell(pos)
@@ -337,8 +341,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			chord_reveal(cell_pos)
 
-func update_visible_area(rect: Rect2) -> void:
+func is_lod_active() -> bool:
+	return current_zoom_level <= lod_zoom_threshold
+
+func update_visible_area(rect: Rect2, zoom_level: float = 1.0) -> void:
 	visible_rect = rect
+	current_zoom_level = zoom_level
 	_request_redraw()
 
 func _request_redraw() -> void:
@@ -346,40 +354,62 @@ func _request_redraw() -> void:
 		queue_redraw()
 
 func _draw() -> void:
+	if is_lod_active():
+		_draw_chunk_lod_overview()
+	else:
+		_draw_cells_detail()
+
+func _get_active_font() -> Font:
+	if custom_font != null:
+		return custom_font
+	if _default_msdf_font == null:
+		var sys_font = SystemFont.new()
+		sys_font.font_names = PackedStringArray(["Sans-Serif", "Segoe UI", "Arial", "Roboto", "Helvetica", "Noto Sans"])
+		sys_font.multichannel_signed_distance_field = true
+		sys_font.msdf_pixel_range = 16
+		_default_msdf_font = sys_font
+	return _default_msdf_font
+
+func _draw_cells_detail() -> void:
 	var min_tile_x = int(floor(visible_rect.position.x / float(cell_size.x))) - 1
 	var min_tile_y = int(floor(visible_rect.position.y / float(cell_size.y))) - 1
 	var max_tile_x = int(ceil(visible_rect.end.x / float(cell_size.x))) + 1
 	var max_tile_y = int(ceil(visible_rect.end.y / float(cell_size.y))) + 1
 
-	var font = ThemeDB.fallback_font
+	var font = _get_active_font()
 	var font_size = 16
 
 	for x in range(min_tile_x, max_tile_x):
 		for y in range(min_tile_y, max_tile_y):
 			var tile_pos = Vector2i(x, y)
-			var cell = get_cell(tile_pos)
 			var rect = Rect2(Vector2(x * cell_size.x, y * cell_size.y), Vector2(cell_size))
 
-			if cell.is_revealed:
-				if cell.is_mine:
-					draw_rect(rect, Color(0.9, 0.2, 0.2))
+			if grid_data.has(tile_pos):
+				var cell = grid_data[tile_pos]
+				if cell.is_revealed:
+					if cell.is_mine:
+						draw_rect(rect, Color(0.9, 0.2, 0.2))
+					else:
+						draw_rect(rect, Color(0.85, 0.85, 0.85))
 				else:
-					draw_rect(rect, Color(0.85, 0.85, 0.85))
+					draw_rect(rect, Color(0.65, 0.65, 0.65))
+
+				draw_rect(rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
+
+				if cell.is_revealed:
+					if not cell.is_mine:
+						var neighbors = count_neighbor_mines(tile_pos)
+						if neighbors > 0:
+							var color = _get_number_color(neighbors)
+							var text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
+							draw_string(font, text_pos, str(neighbors), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+				elif cell.is_flagged:
+					var flag_text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
+					draw_string(font, flag_text_pos, "F", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.9, 0.1, 0.1))
 			else:
+				# Lazy rendering for unvisited cells without instantiating CellData
 				draw_rect(rect, Color(0.65, 0.65, 0.65))
-
-			draw_rect(rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
-
-			if cell.is_revealed:
-				if not cell.is_mine:
-					var neighbors = count_neighbor_mines(tile_pos)
-					if neighbors > 0:
-						var color = _get_number_color(neighbors)
-						var text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
-						draw_string(font, text_pos, str(neighbors), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
-			elif cell.is_flagged:
-				var flag_text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
-				draw_string(font, flag_text_pos, "F", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.9, 0.1, 0.1))
+				draw_rect(rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
 
 	# Draw Chunk overlays and boundaries
 	var min_chunk_x = int(floor(float(min_tile_x) / float(chunk_size.x)))
@@ -397,7 +427,7 @@ func _draw() -> void:
 			# Draw chunk boundary
 			draw_rect(chunk_rect, Color(0.2, 0.4, 0.8, 0.5), false, 2.0)
 
-			if chunk_manager.has_chunk(c_pos):
+			if chunk_manager != null and chunk_manager.has_chunk(c_pos):
 				var chunk_data = chunk_manager.get_chunk(c_pos)
 				if chunk_data.is_locked:
 					draw_rect(chunk_rect, Color(0.9, 0.1, 0.1, 0.25))
@@ -407,6 +437,45 @@ func _draw() -> void:
 				elif chunk_data.is_cleared:
 					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.12))
 					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.7), false, 2.0)
+
+func _draw_chunk_lod_overview() -> void:
+	var chunk_pixel_size = Vector2(chunk_size.x * cell_size.x, chunk_size.y * cell_size.y)
+	if chunk_pixel_size.x <= 0 or chunk_pixel_size.y <= 0:
+		return
+
+	var min_chunk_x = int(floor(visible_rect.position.x / chunk_pixel_size.x)) - 1
+	var min_chunk_y = int(floor(visible_rect.position.y / chunk_pixel_size.y)) - 1
+	var max_chunk_x = int(ceil(visible_rect.end.x / chunk_pixel_size.x)) + 1
+	var max_chunk_y = int(ceil(visible_rect.end.y / chunk_pixel_size.y)) + 1
+
+	for cx in range(min_chunk_x, max_chunk_x + 1):
+		for cy in range(min_chunk_y, max_chunk_y + 1):
+			var c_pos = Vector2i(cx, cy)
+			var chunk_rect = Rect2(Vector2(cx * chunk_pixel_size.x, cy * chunk_pixel_size.y), chunk_pixel_size)
+
+			if chunk_manager != null and chunk_manager.has_chunk(c_pos):
+				var chunk_data = chunk_manager.get_chunk(c_pos)
+				if chunk_data.is_cleared:
+					# 🟩 Cleared Chunk
+					draw_rect(chunk_rect, Color(0.2, 0.8, 0.2, 0.35))
+					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.8), false, 2.0)
+				elif chunk_data.is_locked:
+					# 🟥 Locked Chunk
+					draw_rect(chunk_rect, Color(0.9, 0.1, 0.1, 0.4))
+					draw_rect(chunk_rect, Color(0.9, 0.2, 0.2, 0.8), false, 2.0)
+				elif chunk_data.revealed_safe_cells > 0:
+					# 🟦 Exploring Chunk with progress tint
+					var progress = chunk_data.get_progress()
+					draw_rect(chunk_rect, Color(0.2, 0.5, 0.9, lerp(0.15, 0.5, progress)))
+					draw_rect(chunk_rect, Color(0.3, 0.6, 0.9, 0.7), false, 2.0)
+				else:
+					# ⬛ Instantiated but Unexplored Chunk
+					draw_rect(chunk_rect, Color(0.18, 0.18, 0.18, 0.6))
+					draw_rect(chunk_rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
+			else:
+				# ⬛ Unexplored Chunk
+				draw_rect(chunk_rect, Color(0.18, 0.18, 0.18, 0.6))
+				draw_rect(chunk_rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
 
 func _get_number_color(number: int) -> Color:
 	match number:

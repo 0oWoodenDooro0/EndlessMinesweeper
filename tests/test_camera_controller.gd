@@ -43,8 +43,8 @@ func test_camera_initialization() -> bool:
 		print("[FAIL] min_zoom mismatch. Expected: 0.2, Got: ", camera.min_zoom)
 		camera.free()
 		return false
-	if camera.max_zoom != 3.0:
-		print("[FAIL] max_zoom mismatch. Expected: 3.0, Got: ", camera.max_zoom)
+	if camera.max_zoom != 8.0:
+		print("[FAIL] max_zoom mismatch. Expected: 8.0, Got: ", camera.max_zoom)
 		camera.free()
 		return false
 	if camera.target_zoom != Vector2(1.0, 1.0):

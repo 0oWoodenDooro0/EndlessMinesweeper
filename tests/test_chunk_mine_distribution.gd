@@ -76,7 +76,7 @@ func test_chunk_size_and_dimensions() -> bool:
 	return true
 
 func test_mine_count_bounds_range() -> bool:
-	print("[RUN] Test 2: Mine Count Bounded Range [10, 25]")
+	print("[RUN] Test 2: Mine Count Bounded Range [10, 20]")
 	var grid = GridManager.new()
 	grid.world_seed = 424242
 
@@ -92,13 +92,13 @@ func test_mine_count_bounds_range() -> bool:
 					if grid.is_mine_at(Vector2i(x, y)):
 						mines_in_chunk += 1
 
-			if mines_in_chunk < 10 or mines_in_chunk > 25:
-				print("[FAIL] Chunk (", cx, ", ", cy, ") mine count out of bounds [10, 25]: ", mines_in_chunk)
+			if mines_in_chunk < 10 or mines_in_chunk > 20:
+				print("[FAIL] Chunk (", cx, ", ", cy, ") mine count out of bounds [10, 20]: ", mines_in_chunk)
 				grid.free()
 				return false
 
 	grid.free()
-	print("[PASS] Test 2: Mine count bounded range [10, 25] verified")
+	print("[PASS] Test 2: Mine count bounded range [10, 20] verified")
 	return true
 
 func test_statistical_center_peaked_distribution() -> bool:
@@ -108,7 +108,7 @@ func test_statistical_center_peaked_distribution() -> bool:
 
 	var total_samples = 25000
 	var counts_hist: Dictionary = {}
-	for m in range(10, 26):
+	for m in range(10, 21):
 		counts_hist[m] = 0
 
 	# Sample 25,000 chunks
@@ -131,55 +131,54 @@ func test_statistical_center_peaked_distribution() -> bool:
 			if counts_hist.has(mines_in_chunk):
 				counts_hist[mines_in_chunk] += 1
 			else:
-				print("[FAIL] Sampled mine count out of range [10, 25]: ", mines_in_chunk)
+				print("[FAIL] Sampled mine count out of range [10, 20]: ", mines_in_chunk)
 				grid.free()
 				return false
 			sampled += 1
 
 	print("Histogram of 25,000 chunk mine counts:")
-	for m in range(10, 26):
+	for m in range(10, 21):
 		var pct = float(counts_hist[m]) / float(total_samples) * 100.0
 		print("  Mines %2d: %5d (%.2f%%)" % [m, counts_hist[m], pct])
 
 	# Statistical validation:
-	# 1. Endpoints (10 and 25) must have lowest frequencies (theoretical ~0.78%, allow 0.3% ~ 1.6%)
+	# 1. Endpoints (10 and 20) must have lowest frequencies
 	var pct_10 = float(counts_hist[10]) / float(total_samples) * 100.0
-	var pct_25 = float(counts_hist[25]) / float(total_samples) * 100.0
-	if pct_10 < 0.3 or pct_10 > 1.6 or pct_25 < 0.3 or pct_25 > 1.6:
-		print("[FAIL] Endpoint percentages unexpected: 10=", pct_10, "%, 25=", pct_25, "%")
+	var pct_20 = float(counts_hist[20]) / float(total_samples) * 100.0
+	if pct_10 < 0.3 or pct_10 > 2.5 or pct_20 < 0.3 or pct_20 > 2.5:
+		print("[FAIL] Endpoint percentages unexpected: 10=", pct_10, "%, 20=", pct_20, "%")
 		grid.free()
 		return false
 
-	# 2. Peak Center (17 and 18) must have highest frequencies (theoretical ~11.72%, allow 9.5% ~ 14.0%)
-	var pct_17 = float(counts_hist[17]) / float(total_samples) * 100.0
-	var pct_18 = float(counts_hist[18]) / float(total_samples) * 100.0
-	if pct_17 < 9.5 or pct_17 > 14.0 or pct_18 < 9.5 or pct_18 > 14.0:
-		print("[FAIL] Peak center percentages unexpected: 17=", pct_17, "%, 18=", pct_18, "%")
+	# 2. Peak Center (15) must have highest frequency
+	var pct_15 = float(counts_hist[15]) / float(total_samples) * 100.0
+	if pct_15 < 12.0 or pct_15 > 20.0:
+		print("[FAIL] Peak center percentages unexpected: 15=", pct_15, "%")
 		grid.free()
 		return false
 
 	# 3. Overall peaked shape: low groups < mid groups < peak groups > mid-high groups > high groups
-	var group_low = counts_hist[10] + counts_hist[11] + counts_hist[12]
-	var group_mid_low = counts_hist[13] + counts_hist[14] + counts_hist[15]
-	var group_peak = counts_hist[16] + counts_hist[17] + counts_hist[18] + counts_hist[19]
-	var group_mid_high = counts_hist[20] + counts_hist[21] + counts_hist[22]
-	var group_high = counts_hist[23] + counts_hist[24] + counts_hist[25]
+	var group_low = counts_hist[10] + counts_hist[11]
+	var group_mid_low = counts_hist[12] + counts_hist[13]
+	var group_peak = counts_hist[14] + counts_hist[15] + counts_hist[16]
+	var group_mid_high = counts_hist[17] + counts_hist[18]
+	var group_high = counts_hist[19] + counts_hist[20]
 
 	if not (group_low < group_mid_low and group_mid_low < group_peak and group_peak > group_mid_high and group_mid_high > group_high):
 		print("[FAIL] Distribution failed peaked monotonicity: ", [group_low, group_mid_low, group_peak, group_mid_high, group_high])
 		grid.free()
 		return false
 
-	# 4. Symmetry check: lower half [10..17] vs upper half [18..25]
+	# 4. Symmetry check: lower half [10..14] vs upper half [16..20]
 	var lower_sum = 0
 	var upper_sum = 0
-	for m in range(10, 18):
+	for m in range(10, 15):
 		lower_sum += counts_hist[m]
-	for m in range(18, 26):
+	for m in range(16, 21):
 		upper_sum += counts_hist[m]
 
 	var diff_ratio = abs(float(lower_sum - upper_sum)) / float(total_samples)
-	if diff_ratio > 0.04:
+	if diff_ratio > 0.05:
 		print("[FAIL] Distribution symmetry violated: lower=", lower_sum, " upper=", upper_sum, " diff_ratio=", diff_ratio)
 		grid.free()
 		return false

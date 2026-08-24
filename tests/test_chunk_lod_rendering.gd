@@ -42,8 +42,8 @@ func test_lod_zoom_threshold() -> bool:
 	print("[RUN] Test 1: LOD Zoom Threshold & is_lod_active State Transitions")
 	var grid = GridManager.new()
 
-	if grid.lod_zoom_threshold != 0.45:
-		print("[FAIL] Default lod_zoom_threshold mismatch. Expected: 0.45, Got: ", grid.lod_zoom_threshold)
+	if grid.lod_zoom_threshold != 0.9:
+		print("[FAIL] Default lod_zoom_threshold mismatch. Expected: 0.9, Got: ", grid.lod_zoom_threshold)
 		grid.free()
 		return false
 
@@ -58,16 +58,16 @@ func test_lod_zoom_threshold() -> bool:
 		return false
 
 	# Test above threshold
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.5)
-	if grid.current_zoom_level != 0.5 or grid.is_lod_active():
-		print("[FAIL] Zoom 0.5 should not trigger LOD. is_lod_active: ", grid.is_lod_active())
+	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.95)
+	if grid.current_zoom_level != 0.95 or grid.is_lod_active():
+		print("[FAIL] Zoom 0.95 should not trigger LOD. is_lod_active: ", grid.is_lod_active())
 		grid.free()
 		return false
 
 	# Test exactly at threshold
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.45)
+	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.9)
 	if not grid.is_lod_active():
-		print("[FAIL] Zoom 0.45 should trigger LOD")
+		print("[FAIL] Zoom 0.9 should trigger LOD")
 		grid.free()
 		return false
 

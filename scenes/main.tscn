@@ -1,15 +1,17 @@
-[gd_scene load_steps=4 format=3 uid="uid://main_scene_001"]
+[gd_scene load_steps=5 format=3 uid="uid://main_scene_001"]
 
-[ext_resource type="Script" path="res://scripts/grid_manager.gd" id="1_grid_manager"]
-[ext_resource type="Script" path="res://scripts/camera_controller.gd" id="2_camera_controller"]
-[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/grid_manager.gd" id="2_grid_manager"]
+[ext_resource type="Script" path="res://scripts/camera_controller.gd" id="3_camera_controller"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="4_hud"]
 
 [node name="Main" type="Node2D"]
+script = ExtResource("1_main")
 
 [node name="GridManager" type="Node2D" parent="."]
-script = ExtResource("1_grid_manager")
+script = ExtResource("2_grid_manager")
 
 [node name="Camera2D" type="Camera2D" parent="."]
-script = ExtResource("2_camera_controller")
+script = ExtResource("3_camera_controller")
 
-[node name="HUD" parent="." instance=ExtResource("3_hud")]
+[node name="HUD" parent="." instance=ExtResource("4_hud")]

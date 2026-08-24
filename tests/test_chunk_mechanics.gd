@@ -833,11 +833,42 @@ func test_cleared_chunk_interactions_blocked() -> bool:
 		grid.free()
 		return false
 
-	# 4. Chord reveal inside cleared chunk -> must return false
-	if grid.chord_reveal(Vector2i(1, 0)):
-		print("[FAIL] chord_reveal initiated inside cleared chunk should return false")
+	# 4. Chord reveal inside cleared chunk on cell with no unrevealed neighbors -> returns false
+	if grid.chord_reveal(Vector2i(1, 1)):
+		print("[FAIL] chord_reveal with no unrevealed neighbors should return false")
 		grid.free()
 		return false
+
+	# 4b. Chord reveal from a cleared chunk into an adjacent uncleared chunk
+	var test_grid = GridManager.new()
+	test_grid.chunk_size = Vector2i(4, 4)
+	test_grid.mine_density = 1.0 # High density blocks infinite BFS
+	test_grid.set_first_click(Vector2i(100, 100))
+	for x in range(4):
+		for y in range(4):
+			test_grid.set_mine_at(Vector2i(x, y), false)
+	test_grid.set_mine_at(Vector2i(0, 0), true) # 1 mine in chunk (0, 0)
+	test_grid.set_mine_at(Vector2i(4, 0), false) # safe target in chunk (1, 0)
+	test_grid.set_mine_at(Vector2i(4, 1), true) # mine to flag in chunk (1, 0)
+	test_grid.set_mine_at(Vector2i(2, -1), false)
+	test_grid.set_mine_at(Vector2i(3, -1), false)
+	test_grid.set_mine_at(Vector2i(4, -1), false)
+
+	# Reveal all 15 safe cells in chunk (0, 0)
+	for x in range(4):
+		for y in range(4):
+			if x == 0 and y == 0:
+				continue
+			test_grid.reveal_cell(Vector2i(x, y))
+
+	test_grid.toggle_flag(Vector2i(4, 1))
+	var chord_success = test_grid.chord_reveal(Vector2i(3, 0))
+	if not chord_success or not test_grid.get_cell(Vector2i(4, 0)).is_revealed:
+		print("[FAIL] chord_reveal inside cleared chunk failed to reveal adjacent active cell")
+		test_grid.free()
+		grid.free()
+		return false
+	test_grid.free()
 
 	# 5. set_mine_at on cleared chunk cell -> must be rejected
 	var original_mine_state = mine_cell.is_mine

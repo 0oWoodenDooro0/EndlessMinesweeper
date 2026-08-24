@@ -5,18 +5,62 @@ signal cell_revealed(pos: Vector2i, is_mine: bool)
 signal cell_flag_changed(pos: Vector2i, is_flagged: bool)
 signal game_over(hit_mine_pos: Vector2i)
 signal game_reset
-
+signal chunk_locked(chunk_pos: Vector2i, mine_pos: Vector2i)
+signal chunk_cleared(chunk_pos: Vector2i)
+signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 
 @export var world_seed: int = 1337
 @export var mine_density: float = 0.15
 @export var cell_size: Vector2i = Vector2i(32, 32)
 @export var safe_zone_radius: int = 1
+@export var chunk_size: Vector2i = Vector2i(8, 8)
+@export var enable_chunk_lockout: bool = true
 
 var has_first_clicked: bool = false
 var first_click_pos: Vector2i = Vector2i.ZERO
 var is_game_over: bool = false
 var grid_data: Dictionary = {} # Vector2i -> CellData
+var chunks: Dictionary = {} # Vector2i -> ChunkData
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
+
+func cell_to_chunk(cell_pos: Vector2i) -> Vector2i:
+	return Vector2i(
+		int(floor(float(cell_pos.x) / float(chunk_size.x))),
+		int(floor(float(cell_pos.y) / float(chunk_size.y)))
+	)
+
+func get_chunk(c_pos: Vector2i) -> ChunkData:
+	if chunks.has(c_pos):
+		return chunks[c_pos]
+	
+	var chunk = ChunkData.new(c_pos)
+	_calculate_chunk_safe_cells(chunk)
+	chunks[c_pos] = chunk
+	return chunk
+
+func get_chunk_for_cell(cell_pos: Vector2i) -> ChunkData:
+	return get_chunk(cell_to_chunk(cell_pos))
+
+func _calculate_chunk_safe_cells(chunk: ChunkData) -> void:
+	var safe_count = 0
+	var revealed_count = 0
+	var min_x = chunk.chunk_pos.x * chunk_size.x
+	var min_y = chunk.chunk_pos.y * chunk_size.y
+	for x in range(min_x, min_x + chunk_size.x):
+		for y in range(min_y, min_y + chunk_size.y):
+			var p = Vector2i(x, y)
+			if not is_mine_at(p):
+				safe_count += 1
+			if grid_data.has(p) and grid_data[p].is_revealed and not grid_data[p].is_mine:
+				revealed_count += 1
+	chunk.total_safe_cells = safe_count
+	chunk.revealed_safe_cells = revealed_count
+	if chunk.total_safe_cells > 0 and chunk.revealed_safe_cells >= chunk.total_safe_cells:
+		chunk.is_cleared = true
+
+func recalculate_chunk_safe_cells(c_pos: Vector2i) -> void:
+	if chunks.has(c_pos):
+		_calculate_chunk_safe_cells(chunks[c_pos])
 
 func get_cell(pos: Vector2i) -> CellData:
 	if grid_data.has(pos):
@@ -53,17 +97,23 @@ func set_first_click(pos: Vector2i) -> void:
 	has_first_clicked = true
 	first_click_pos = pos
 
+	var affected_chunks = {}
 	for dx in range(-safe_zone_radius, safe_zone_radius + 1):
 		for dy in range(-safe_zone_radius, safe_zone_radius + 1):
 			var p = pos + Vector2i(dx, dy)
 			var cell = get_cell(p)
 			cell.is_mine = false
+			affected_chunks[cell_to_chunk(p)] = true
+
+	for c_pos in affected_chunks:
+		recalculate_chunk_safe_cells(c_pos)
 
 func set_mine_at(pos: Vector2i, mine_state: bool) -> void:
 	has_first_clicked = true
 	first_click_pos = Vector2i(-999999, -999999)
 	var cell = get_cell(pos)
 	cell.is_mine = mine_state
+	recalculate_chunk_safe_cells(cell_to_chunk(pos))
 
 func count_neighbor_mines(pos: Vector2i) -> int:
 	var count = 0
@@ -98,11 +148,16 @@ func reset_game(new_density: float = -1.0, new_seed: int = -1) -> void:
 	else:
 		world_seed = randi() & 0x7FFFFFFF
 	grid_data.clear()
+	chunks.clear()
 	game_reset.emit()
 	_request_redraw()
 
 func reveal_cell(pos: Vector2i) -> bool:
 	if is_game_over:
+		return false
+
+	var chunk = get_chunk_for_cell(pos)
+	if chunk.is_locked:
 		return false
 
 	var cell = get_cell(pos)
@@ -116,10 +171,21 @@ func reveal_cell(pos: Vector2i) -> bool:
 	cell_revealed.emit(pos, cell.is_mine)
 
 	if cell.is_mine:
-		is_game_over = true
-		game_over.emit(pos)
-		_request_redraw()
-		return true
+		if enable_chunk_lockout:
+			chunk.is_locked = true
+			if not chunk.locked_mine_positions.has(pos):
+				chunk.locked_mine_positions.append(pos)
+			chunk_locked.emit(chunk.chunk_pos, pos)
+			_request_redraw()
+			return true
+		else:
+			is_game_over = true
+			game_over.emit(pos)
+			_request_redraw()
+			return true
+
+	chunk.revealed_safe_cells += 1
+	_check_chunk_cleared(chunk)
 
 	if count_neighbor_mines(pos) == 0:
 		_expand_zero_mines_bfs(pos)
@@ -142,6 +208,10 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 					continue
 				visited[n_pos] = true
 
+				var n_chunk = get_chunk_for_cell(n_pos)
+				if n_chunk.is_locked:
+					continue
+
 				var n_cell = get_cell(n_pos)
 				if n_cell.is_flagged or n_cell.is_revealed:
 					continue
@@ -149,11 +219,66 @@ func _expand_zero_mines_bfs(start_pos: Vector2i) -> void:
 				n_cell.is_revealed = true
 				cell_revealed.emit(n_pos, n_cell.is_mine)
 
-				if not n_cell.is_mine and count_neighbor_mines(n_pos) == 0:
-					queue.append(n_pos)
+				if not n_cell.is_mine:
+					n_chunk.revealed_safe_cells += 1
+					_check_chunk_cleared(n_chunk)
+					if count_neighbor_mines(n_pos) == 0:
+						queue.append(n_pos)
+
+func _check_chunk_cleared(chunk: ChunkData) -> void:
+	if not chunk.is_cleared and chunk.total_safe_cells > 0 and chunk.revealed_safe_cells >= chunk.total_safe_cells:
+		chunk.is_cleared = true
+		chunk_cleared.emit(chunk.chunk_pos)
+		_check_neighbors_unlock(chunk.chunk_pos)
+
+func _check_neighbors_unlock(cleared_chunk_pos: Vector2i) -> void:
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var target_c_pos = cleared_chunk_pos + Vector2i(dx, dy)
+			if chunks.has(target_c_pos):
+				var target_chunk = chunks[target_c_pos]
+				if target_chunk.is_locked:
+					_try_unlock_chunk(target_c_pos)
+
+func _try_unlock_chunk(c_pos: Vector2i) -> void:
+	var target_chunk = get_chunk(c_pos)
+	if not target_chunk.is_locked:
+		return
+
+	var all_8_cleared = true
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			var n_pos = c_pos + Vector2i(dx, dy)
+			var n_chunk = get_chunk(n_pos)
+			if not n_chunk.is_cleared:
+				all_8_cleared = false
+				break
+		if not all_8_cleared:
+			break
+
+	if all_8_cleared:
+		target_chunk.is_locked = false
+		var recovered: Array[Vector2i] = []
+		for m_pos in target_chunk.locked_mine_positions:
+			var m_cell = get_cell(m_pos)
+			m_cell.is_revealed = false
+			m_cell.is_flagged = true
+			recovered.append(m_pos)
+			cell_flag_changed.emit(m_pos, true)
+		target_chunk.locked_mine_positions.clear()
+		chunk_unlocked.emit(c_pos, recovered)
+		_request_redraw()
 
 func toggle_flag(pos: Vector2i) -> void:
 	if is_game_over:
+		return
+
+	var chunk = get_chunk_for_cell(pos)
+	if chunk.is_locked:
 		return
 
 	var cell = get_cell(pos)
@@ -166,6 +291,10 @@ func toggle_flag(pos: Vector2i) -> void:
 
 func chord_reveal(pos: Vector2i) -> bool:
 	if is_game_over:
+		return false
+
+	var chunk = get_chunk_for_cell(pos)
+	if chunk.is_locked:
 		return false
 
 	var cell = get_cell(pos)
@@ -184,6 +313,9 @@ func chord_reveal(pos: Vector2i) -> bool:
 			if dx == 0 and dy == 0:
 				continue
 			var n_pos = pos + Vector2i(dx, dy)
+			var n_chunk = get_chunk_for_cell(n_pos)
+			if n_chunk.is_locked:
+				continue
 			var n_cell = get_cell(n_pos)
 			if not n_cell.is_revealed and not n_cell.is_flagged:
 				if reveal_cell(n_pos):
@@ -253,6 +385,33 @@ func _draw() -> void:
 			elif cell.is_flagged:
 				var flag_text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
 				draw_string(font, flag_text_pos, "F", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.9, 0.1, 0.1))
+
+	# Draw Chunk overlays and boundaries
+	var min_chunk_x = int(floor(float(min_tile_x) / float(chunk_size.x)))
+	var min_chunk_y = int(floor(float(min_tile_y) / float(chunk_size.y)))
+	var max_chunk_x = int(ceil(float(max_tile_x) / float(chunk_size.x)))
+	var max_chunk_y = int(ceil(float(max_tile_y) / float(chunk_size.y)))
+
+	var chunk_pixel_size = Vector2(chunk_size.x * cell_size.x, chunk_size.y * cell_size.y)
+
+	for cx in range(min_chunk_x, max_chunk_x + 1):
+		for cy in range(min_chunk_y, max_chunk_y + 1):
+			var c_pos = Vector2i(cx, cy)
+			var chunk_rect = Rect2(Vector2(cx * chunk_pixel_size.x, cy * chunk_pixel_size.y), chunk_pixel_size)
+
+			# Draw chunk boundary
+			draw_rect(chunk_rect, Color(0.2, 0.4, 0.8, 0.5), false, 2.0)
+
+			if chunks.has(c_pos):
+				var chunk_data = chunks[c_pos]
+				if chunk_data.is_locked:
+					draw_rect(chunk_rect, Color(0.9, 0.1, 0.1, 0.25))
+					var lock_label = "[LOCKED]"
+					var label_pos = chunk_rect.position + chunk_pixel_size * 0.5 + Vector2(-30, 6)
+					draw_string(font, label_pos, lock_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color(1.0, 0.2, 0.2))
+				elif chunk_data.is_cleared:
+					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.12))
+					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.7), false, 2.0)
 
 func _get_number_color(number: int) -> Color:
 	match number:

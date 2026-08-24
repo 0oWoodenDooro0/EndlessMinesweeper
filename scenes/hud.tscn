@@ -30,6 +30,10 @@ text = "Explored: 0"
 layout_mode = 2
 text = "Flags: 0"
 
+[node name="ChunkStatsLabel" type="Label" parent="TopBar/MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "Cleared: 0 | Locked: 0"
+
 [node name="TimeLabel" type="Label" parent="TopBar/MarginContainer/HBoxContainer"]
 layout_mode = 2
 text = "Time: 00:00"

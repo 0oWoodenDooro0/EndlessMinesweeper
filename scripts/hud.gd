@@ -72,14 +72,118 @@ func _init() -> void:
 
 func _ready() -> void:
 	setup_ui_nodes()
+	_apply_responsive_layout()
+	if get_viewport() != null and not get_viewport().size_changed.is_connected(Callable(self, "_apply_responsive_layout")):
+		get_viewport().size_changed.connect(Callable(self, "_apply_responsive_layout"))
 	_connect_session_signals()
 	if grid_manager == null:
 		_auto_find_grid_manager()
 	else:
 		bind_grid_manager(grid_manager)
 
+func is_mobile_layout() -> bool:
+	if OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios"):
+		return true
+	if is_inside_tree() and get_viewport() != null:
+		var vp_size = get_viewport().get_visible_rect().size
+		if vp_size.y > vp_size.x:
+			return true
+	return false
+
+func _apply_responsive_layout() -> void:
+	if not is_inside_tree():
+		return
+
+	var top_bar = get_node_or_null("TopBar") as Control
+	var margin_container = get_node_or_null("TopBar/MarginContainer") as MarginContainer
+	var hbox = get_node_or_null("TopBar/MarginContainer/HBoxContainer") as HBoxContainer
+	var modal_panel = get_node_or_null("GameOverModal/Panel") as Control
+	var modal_vbox = get_node_or_null("GameOverModal/Panel/VBoxContainer") as VBoxContainer
+	var modal_title = get_node_or_null("GameOverModal/Panel/VBoxContainer/TitleLabel") as Label
+
+	var on_mobile = is_mobile_layout()
+
+	if on_mobile:
+		var top_inset = 0
+		if DisplayServer.has_method("get_display_safe_area"):
+			var safe_area = DisplayServer.get_display_safe_area()
+			if get_viewport() != null:
+				var screen_size = DisplayServer.screen_get_size()
+				var vp_size = get_viewport().get_visible_rect().size
+				if screen_size.y > 0 and safe_area.position.y > 0:
+					var scale_y = vp_size.y / float(screen_size.y)
+					top_inset = int(ceil(float(safe_area.position.y) * scale_y))
+
+		var base_top = 36
+		var applied_top = maxi(base_top, base_top + top_inset)
+
+		if top_bar != null:
+			top_bar.offset_bottom = maxi(150, applied_top + 90)
+
+		if margin_container != null:
+			margin_container.add_theme_constant_override("margin_left", 28)
+			margin_container.add_theme_constant_override("margin_top", applied_top)
+			margin_container.add_theme_constant_override("margin_right", 28)
+			margin_container.add_theme_constant_override("margin_bottom", 20)
+
+		if hbox != null:
+			hbox.add_theme_constant_override("separation", 24)
+
+		for lbl in [explored_label, flag_label, chunk_stats_label, time_label]:
+			if lbl != null:
+				lbl.add_theme_font_size_override("font_size", 40)
+
+		if restart_button != null:
+			restart_button.custom_minimum_size = Vector2(180, 80)
+			restart_button.add_theme_font_size_override("font_size", 40)
+
+		if modal_panel != null:
+			modal_panel.custom_minimum_size = Vector2(640, 480)
+		if modal_vbox != null:
+			modal_vbox.add_theme_constant_override("separation", 28)
+		if modal_title != null:
+			modal_title.add_theme_font_size_override("font_size", 64)
+		if game_over_stats_label != null:
+			game_over_stats_label.add_theme_font_size_override("font_size", 44)
+		if play_again_button != null:
+			play_again_button.custom_minimum_size = Vector2(300, 90)
+			play_again_button.add_theme_font_size_override("font_size", 44)
+	else:
+		if top_bar != null:
+			top_bar.offset_bottom = 56.0
+
+		if margin_container != null:
+			margin_container.add_theme_constant_override("margin_left", 16)
+			margin_container.add_theme_constant_override("margin_top", 10)
+			margin_container.add_theme_constant_override("margin_right", 16)
+			margin_container.add_theme_constant_override("margin_bottom", 10)
+
+		if hbox != null:
+			hbox.add_theme_constant_override("separation", 16)
+
+		for lbl in [explored_label, flag_label, chunk_stats_label, time_label]:
+			if lbl != null:
+				lbl.add_theme_font_size_override("font_size", 18)
+
+		if restart_button != null:
+			restart_button.custom_minimum_size = Vector2(80, 36)
+			restart_button.add_theme_font_size_override("font_size", 18)
+
+		if modal_panel != null:
+			modal_panel.custom_minimum_size = Vector2(340, 240)
+		if modal_vbox != null:
+			modal_vbox.add_theme_constant_override("separation", 16)
+		if modal_title != null:
+			modal_title.add_theme_font_size_override("font_size", 28)
+		if game_over_stats_label != null:
+			game_over_stats_label.add_theme_font_size_override("font_size", 20)
+		if play_again_button != null:
+			play_again_button.custom_minimum_size = Vector2(160, 44)
+			play_again_button.add_theme_font_size_override("font_size", 20)
+
 func setup_ui_nodes() -> void:
 	_connect_session_signals()
+	_apply_responsive_layout()
 
 	if has_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel"):
 		explored_label = get_node("TopBar/MarginContainer/HBoxContainer/ExploredLabel") as Label
@@ -189,7 +293,7 @@ func _update_labels() -> void:
 	if flag_label != null:
 		flag_label.text = "Flags: %d" % flag_count
 	if chunk_stats_label != null:
-		chunk_stats_label.text = "Cleared: %d | Locked: %d" % [cleared_chunks_count, locked_chunks_count]
+		chunk_stats_label.text = "Cleared: %d" % cleared_chunks_count
 	_update_time_label()
 
 func _update_time_label() -> void:

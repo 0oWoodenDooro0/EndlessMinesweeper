@@ -2,7 +2,7 @@ class_name CameraController
 extends Camera2D
 
 @export var min_zoom: float = 0.2
-@export var max_zoom: float = 3.0
+@export var max_zoom: float = 8.0
 @export var zoom_step: float = 0.15
 @export var zoom_smoothness: float = 15.0
 @export var pan_smoothness: float = 20.0
@@ -45,6 +45,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func apply_zoom_step(direction: int) -> void:
 	var factor = 1.0 + (zoom_step * direction)
+	var new_zoom_val = clamp(target_zoom.x * factor, min_zoom, max_zoom)
+	target_zoom = Vector2(new_zoom_val, new_zoom_val)
+
+func apply_pinch_zoom(factor: float) -> void:
 	var new_zoom_val = clamp(target_zoom.x * factor, min_zoom, max_zoom)
 	target_zoom = Vector2(new_zoom_val, new_zoom_val)
 

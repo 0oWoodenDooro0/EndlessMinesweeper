@@ -134,14 +134,14 @@ func is_mine_at(pos: Vector2i) -> bool:
 
 	return _is_mine_generated_at(pos)
 
-func _get_or_generate_chunk_mines(c_pos: Vector2i) -> Dictionary:
+func _get_or_generate_chunk_mine_mask(c_pos: Vector2i) -> int:
 	if _chunk_mine_cache.has(c_pos):
 		return _chunk_mine_cache[c_pos]
-	var mines_dict = _generate_chunk_mines_dict(c_pos)
-	_chunk_mine_cache[c_pos] = mines_dict
-	return mines_dict
+	var mask = _generate_chunk_mine_mask(c_pos)
+	_chunk_mine_cache[c_pos] = mask
+	return mask
 
-func _generate_chunk_mines_dict(c_pos: Vector2i) -> Dictionary:
+func _generate_chunk_mine_mask(c_pos: Vector2i) -> int:
 	var chunk_seed = hash(Vector3i(c_pos.x, c_pos.y, world_seed))
 	_rng.seed = chunk_seed
 
@@ -170,32 +170,42 @@ func _generate_chunk_mines_dict(c_pos: Vector2i) -> Dictionary:
 		mine_count = clampi(mine_count, min_m, max_m)
 
 	var picked: Dictionary = {}
-	var mines_dict: Dictionary = {}
-	var min_x = c_pos.x * w
-	var min_y = c_pos.y * h
+	var mask: int = 0
 	for i in range(mine_count):
 		var j = _rng.randi_range(i, total_cells - 1)
 		var val_j = picked.get(j, j)
 		var val_i = picked.get(i, i)
 		picked[j] = val_i
 		picked[i] = val_j
-		var lx = val_j % w
-		var ly = val_j / w
-		mines_dict[Vector2i(min_x + lx, min_y + ly)] = true
+		if val_j < 64:
+			mask |= (1 << val_j)
 
-	return mines_dict
+	return mask
 
 func _generate_chunk_mines(c_pos: Vector2i) -> Array[Vector2i]:
-	var mines_dict = _get_or_generate_chunk_mines(c_pos)
+	var mask = _get_or_generate_chunk_mine_mask(c_pos)
 	var arr: Array[Vector2i] = []
-	for p in mines_dict:
-		arr.append(p)
+	var w = chunk_size.x
+	var h = chunk_size.y
+	var min_x = c_pos.x * w
+	var min_y = c_pos.y * h
+	var total_cells = mini(w * h, 64)
+	for idx in range(total_cells):
+		if (mask & (1 << idx)) != 0:
+			var lx = idx % w
+			var ly = idx / w
+			arr.append(Vector2i(min_x + lx, min_y + ly))
 	return arr
 
 func _is_mine_generated_at(pos: Vector2i) -> bool:
 	var c_pos = cell_to_chunk(pos)
-	var mines = _get_or_generate_chunk_mines(c_pos)
-	return mines.has(pos)
+	var mask = _get_or_generate_chunk_mine_mask(c_pos)
+	var lx = pos.x - c_pos.x * chunk_size.x
+	var ly = pos.y - c_pos.y * chunk_size.y
+	var idx = ly * chunk_size.x + lx
+	if idx >= 0 and idx < 64:
+		return (mask & (1 << idx)) != 0
+	return false
 
 func is_in_safe_zone(pos: Vector2i) -> bool:
 	if not has_first_clicked:
@@ -288,7 +298,7 @@ func count_neighbor_flags(pos: Vector2i) -> int:
 			if dx == 0 and dy == 0:
 				continue
 			var n_pos = pos + Vector2i(dx, dy)
-			if get_cell(n_pos).is_flagged:
+			if grid_data.has(n_pos) and grid_data[n_pos].is_flagged:
 				count += 1
 	return count
 
@@ -490,7 +500,10 @@ func chord_reveal(pos: Vector2i) -> bool:
 	if chunk_manager.is_cell_in_locked_chunk(pos):
 		return false
 
-	var cell = get_cell(pos)
+	if not grid_data.has(pos):
+		return false
+
+	var cell = grid_data[pos]
 	if not cell.is_revealed:
 		return false
 
@@ -508,8 +521,12 @@ func chord_reveal(pos: Vector2i) -> bool:
 			var n_pos = pos + Vector2i(dx, dy)
 			if chunk_manager.is_cell_in_locked_chunk(n_pos) or chunk_manager.is_cell_in_cleared_chunk(n_pos):
 				continue
-			var n_cell = get_cell(n_pos)
-			if not n_cell.is_revealed and not n_cell.is_flagged:
+			if grid_data.has(n_pos):
+				var n_cell = grid_data[n_pos]
+				if not n_cell.is_revealed and not n_cell.is_flagged:
+					if reveal_cell(n_pos):
+						revealed_any = true
+			else:
 				if reveal_cell(n_pos):
 					revealed_any = true
 
@@ -688,7 +705,8 @@ func is_lod_active() -> bool:
 func update_visible_area(rect: Rect2, zoom_level: float = 1.0) -> void:
 	visible_rect = rect
 	current_zoom_level = zoom_level
-	preload_chunks_around_viewport(1)
+	if not is_lod_active():
+		preload_chunks_around_viewport(1)
 	_request_redraw()
 
 func _request_redraw() -> void:
@@ -701,6 +719,43 @@ func _draw() -> void:
 	else:
 		_draw_cells_detail()
 
+const NUMBER_STRINGS: Array[String] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+const NUMBER_COLORS: Array[Color] = [
+	Color.BLACK,
+	Color(0.1, 0.3, 0.9),   # 1: Blue
+	Color(0.1, 0.7, 0.2),   # 2: Green
+	Color(0.9, 0.1, 0.1),   # 3: Red
+	Color(0.5, 0.1, 0.7),   # 4: Purple
+	Color(0.7, 0.4, 0.1),   # 5: Maroon
+	Color(0.1, 0.7, 0.7),   # 6: Turquoise
+	Color(0.1, 0.1, 0.1),   # 7: Black
+	Color(0.5, 0.5, 0.5)    # 8: Gray
+]
+
+const STRING_FLAG: String = "F"
+const STRING_LOCKED: String = "[LOCKED]"
+
+const COLOR_TILE_BG: Color = Color(0.65, 0.65, 0.65)
+const COLOR_TILE_GRID: Color = Color(0.3, 0.3, 0.3, 0.4)
+const COLOR_TILE_REVEALED: Color = Color(0.85, 0.85, 0.85)
+const COLOR_TILE_MINE: Color = Color(0.9, 0.2, 0.2)
+const COLOR_TILE_FLAG: Color = Color(0.9, 0.1, 0.1)
+const COLOR_CHUNK_BORDER: Color = Color(0.2, 0.4, 0.8, 0.5)
+
+const COLOR_LOD_BG: Color = Color(0.18, 0.18, 0.18, 0.6)
+const COLOR_LOD_GRID: Color = Color(0.3, 0.3, 0.3, 0.4)
+
+const COLOR_CHUNK_LOCKED_FILL: Color = Color(0.9, 0.1, 0.1, 0.25)
+const COLOR_CHUNK_LOCKED_TEXT: Color = Color(1.0, 0.2, 0.2)
+const COLOR_CHUNK_CLEARED_FILL: Color = Color(0.2, 0.9, 0.2, 0.12)
+const COLOR_CHUNK_CLEARED_BORDER: Color = Color(0.2, 0.9, 0.2, 0.7)
+
+const COLOR_LOD_CLEARED_FILL: Color = Color(0.2, 0.8, 0.2, 0.35)
+const COLOR_LOD_CLEARED_BORDER: Color = Color(0.2, 0.9, 0.2, 0.8)
+const COLOR_LOD_LOCKED_FILL: Color = Color(0.9, 0.1, 0.1, 0.4)
+const COLOR_LOD_LOCKED_BORDER: Color = Color(0.9, 0.2, 0.2, 0.8)
+const COLOR_LOD_EXPLORING_BORDER: Color = Color(0.3, 0.6, 0.9, 0.7)
+
 func _get_active_font() -> Font:
 	if custom_font != null:
 		return custom_font
@@ -709,6 +764,7 @@ func _get_active_font() -> Font:
 		sys_font.font_names = PackedStringArray(["Sans-Serif", "Segoe UI", "Arial", "Roboto", "Helvetica", "Noto Sans"])
 		sys_font.multichannel_signed_distance_field = true
 		sys_font.msdf_pixel_range = 16
+		sys_font.msdf_size = 48
 		_default_msdf_font = sys_font
 	return _default_msdf_font
 
@@ -721,39 +777,58 @@ func _draw_cells_detail() -> void:
 	var font = _get_active_font()
 	var font_size = 16
 
+	var world_tile_min = Vector2(min_tile_x * cell_size.x, min_tile_y * cell_size.y)
+	var world_tile_max = Vector2(max_tile_x * cell_size.x, max_tile_y * cell_size.y)
+	var bg_rect = Rect2(world_tile_min, world_tile_max - world_tile_min)
+
+	# 1. Base background for entire visible tile area (1 draw call)
+	draw_rect(bg_rect, COLOR_TILE_BG)
+
+	# 2. Draw revealed cell background fills underneath the grid lines
 	for x in range(min_tile_x, max_tile_x):
 		for y in range(min_tile_y, max_tile_y):
 			var tile_pos = Vector2i(x, y)
-			var rect = Rect2(Vector2(x * cell_size.x, y * cell_size.y), Vector2(cell_size))
-
 			if grid_data.has(tile_pos):
 				var cell = grid_data[tile_pos]
 				if cell.is_revealed:
+					var rect = Rect2(Vector2(x * cell_size.x, y * cell_size.y), Vector2(cell_size))
 					if cell.is_mine:
-						draw_rect(rect, Color(0.9, 0.2, 0.2))
+						draw_rect(rect, COLOR_TILE_MINE)
 					else:
-						draw_rect(rect, Color(0.85, 0.85, 0.85))
-				else:
-					draw_rect(rect, Color(0.65, 0.65, 0.65))
+						draw_rect(rect, COLOR_TILE_REVEALED)
 
-				draw_rect(rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
+	# 3. Batched tile grid lines drawn ON TOP of all cell fills (1 draw call with draw_multiline)
+	var grid_lines = PackedVector2Array()
+	for x in range(min_tile_x, max_tile_x + 1):
+		var x_pos = x * cell_size.x
+		grid_lines.append(Vector2(x_pos, world_tile_min.y))
+		grid_lines.append(Vector2(x_pos, world_tile_max.y))
+	for y in range(min_tile_y, max_tile_y + 1):
+		var y_pos = y * cell_size.y
+		grid_lines.append(Vector2(world_tile_min.x, y_pos))
+		grid_lines.append(Vector2(world_tile_max.x, y_pos))
+	draw_multiline(grid_lines, COLOR_TILE_GRID, 1.0)
+
+	# 4. Draw numbers and flags on top of grid lines
+	for x in range(min_tile_x, max_tile_x):
+		for y in range(min_tile_y, max_tile_y):
+			var tile_pos = Vector2i(x, y)
+			if grid_data.has(tile_pos):
+				var cell = grid_data[tile_pos]
+				var rect = Rect2(Vector2(x * cell_size.x, y * cell_size.y), Vector2(cell_size))
 
 				if cell.is_revealed:
 					if not cell.is_mine:
 						var neighbors = count_neighbor_mines(tile_pos)
-						if neighbors > 0:
+						if neighbors > 0 and neighbors < NUMBER_STRINGS.size():
 							var color = _get_number_color(neighbors)
 							var text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
-							draw_string(font, text_pos, str(neighbors), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+							draw_char(font, text_pos, NUMBER_STRINGS[neighbors], font_size, color)
 				elif cell.is_flagged:
 					var flag_text_pos = rect.position + Vector2(cell_size.x * 0.3, cell_size.y * 0.75)
-					draw_string(font, flag_text_pos, "F", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.9, 0.1, 0.1))
-			else:
-				# Lazy rendering for unvisited cells without instantiating CellData
-				draw_rect(rect, Color(0.65, 0.65, 0.65))
-				draw_rect(rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
+					draw_char(font, flag_text_pos, STRING_FLAG, font_size, COLOR_TILE_FLAG)
 
-	# Draw Chunk overlays and boundaries
+	# 5. Draw Chunk overlays and boundaries
 	var min_chunk_x = int(floor(float(min_tile_x) / float(chunk_size.x)))
 	var min_chunk_y = int(floor(float(min_tile_y) / float(chunk_size.y)))
 	var max_chunk_x = int(ceil(float(max_tile_x) / float(chunk_size.x)))
@@ -761,24 +836,36 @@ func _draw_cells_detail() -> void:
 
 	var chunk_pixel_size = Vector2(chunk_size.x * cell_size.x, chunk_size.y * cell_size.y)
 
-	for cx in range(min_chunk_x, max_chunk_x + 1):
-		for cy in range(min_chunk_y, max_chunk_y + 1):
-			var c_pos = Vector2i(cx, cy)
-			var chunk_rect = Rect2(Vector2(cx * chunk_pixel_size.x, cy * chunk_pixel_size.y), chunk_pixel_size)
+	# Batched chunk boundary lines (1 draw call)
+	var chunk_lines = PackedVector2Array()
+	var world_chunk_start_x = min_chunk_x * chunk_pixel_size.x
+	var world_chunk_end_x = (max_chunk_x + 1) * chunk_pixel_size.x
+	var world_chunk_start_y = min_chunk_y * chunk_pixel_size.y
+	var world_chunk_end_y = (max_chunk_y + 1) * chunk_pixel_size.y
 
-			# Draw chunk boundary
-			draw_rect(chunk_rect, Color(0.2, 0.4, 0.8, 0.5), false, 2.0)
+	for cx in range(min_chunk_x, max_chunk_x + 2):
+		var x_pos = cx * chunk_pixel_size.x
+		chunk_lines.append(Vector2(x_pos, world_chunk_start_y))
+		chunk_lines.append(Vector2(x_pos, world_chunk_end_y))
+	for cy in range(min_chunk_y, max_chunk_y + 2):
+		var y_pos = cy * chunk_pixel_size.y
+		chunk_lines.append(Vector2(world_chunk_start_x, y_pos))
+		chunk_lines.append(Vector2(world_chunk_end_x, y_pos))
+	draw_multiline(chunk_lines, COLOR_CHUNK_BORDER, 2.0)
 
-			if chunk_manager != null and chunk_manager.has_chunk(c_pos):
-				var chunk_data = chunk_manager.get_chunk(c_pos)
+	# Active chunk status overlays
+	if chunk_manager != null:
+		for c_pos in chunk_manager.chunks:
+			if c_pos.x >= min_chunk_x and c_pos.x <= max_chunk_x and c_pos.y >= min_chunk_y and c_pos.y <= max_chunk_y:
+				var chunk_data = chunk_manager.chunks[c_pos]
+				var chunk_rect = Rect2(Vector2(c_pos.x * chunk_pixel_size.x, c_pos.y * chunk_pixel_size.y), chunk_pixel_size)
 				if chunk_data.is_locked:
-					draw_rect(chunk_rect, Color(0.9, 0.1, 0.1, 0.25))
-					var lock_label = "[LOCKED]"
+					draw_rect(chunk_rect, COLOR_CHUNK_LOCKED_FILL)
 					var label_pos = chunk_rect.position + chunk_pixel_size * 0.5 + Vector2(-30, 6)
-					draw_string(font, label_pos, lock_label, HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color(1.0, 0.2, 0.2))
+					draw_string(font, label_pos, STRING_LOCKED, HORIZONTAL_ALIGNMENT_CENTER, -1, 16, COLOR_CHUNK_LOCKED_TEXT)
 				elif chunk_data.is_cleared:
-					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.12))
-					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.7), false, 2.0)
+					draw_rect(chunk_rect, COLOR_CHUNK_CLEARED_FILL)
+					draw_rect(chunk_rect, COLOR_CHUNK_CLEARED_BORDER, false, 2.0)
 
 func _draw_chunk_lod_overview() -> void:
 	var chunk_pixel_size = Vector2(chunk_size.x * cell_size.x, chunk_size.y * cell_size.y)
@@ -790,58 +877,62 @@ func _draw_chunk_lod_overview() -> void:
 	var max_chunk_x = int(ceil(visible_rect.end.x / chunk_pixel_size.x)) + 1
 	var max_chunk_y = int(ceil(visible_rect.end.y / chunk_pixel_size.y)) + 1
 
-	for cx in range(min_chunk_x, max_chunk_x + 1):
-		for cy in range(min_chunk_y, max_chunk_y + 1):
-			var c_pos = Vector2i(cx, cy)
-			var chunk_rect = Rect2(Vector2(cx * chunk_pixel_size.x, cy * chunk_pixel_size.y), chunk_pixel_size)
+	var world_chunk_min = Vector2(min_chunk_x * chunk_pixel_size.x, min_chunk_y * chunk_pixel_size.y)
+	var world_chunk_max = Vector2((max_chunk_x + 1) * chunk_pixel_size.x, (max_chunk_y + 1) * chunk_pixel_size.y)
+	var bg_rect = Rect2(world_chunk_min, world_chunk_max - world_chunk_min)
 
-			if chunk_manager != null and chunk_manager.has_chunk(c_pos):
-				var chunk_data = chunk_manager.get_chunk(c_pos)
+	# 1. Batched background for entire visible chunk overview (1 draw call)
+	draw_rect(bg_rect, COLOR_LOD_BG)
+
+	# 2. Batched chunk grid lines (1 draw call with draw_multiline)
+	var chunk_grid_lines = PackedVector2Array()
+	for cx in range(min_chunk_x, max_chunk_x + 2):
+		var x_pos = cx * chunk_pixel_size.x
+		chunk_grid_lines.append(Vector2(x_pos, world_chunk_min.y))
+		chunk_grid_lines.append(Vector2(x_pos, world_chunk_max.y))
+	for cy in range(min_chunk_y, max_chunk_y + 2):
+		var y_pos = cy * chunk_pixel_size.y
+		chunk_grid_lines.append(Vector2(world_chunk_min.x, y_pos))
+		chunk_grid_lines.append(Vector2(world_chunk_max.x, y_pos))
+	draw_multiline(chunk_grid_lines, COLOR_LOD_GRID, 1.0)
+
+	# 3. Only draw instantiated chunks with active states within visible rect
+	if chunk_manager != null:
+		for c_pos in chunk_manager.chunks:
+			if c_pos.x >= min_chunk_x and c_pos.x <= max_chunk_x and c_pos.y >= min_chunk_y and c_pos.y <= max_chunk_y:
+				var chunk_data = chunk_manager.chunks[c_pos]
+				var chunk_rect = Rect2(Vector2(c_pos.x * chunk_pixel_size.x, c_pos.y * chunk_pixel_size.y), chunk_pixel_size)
 				if chunk_data.is_cleared:
 					# 🟩 Cleared Chunk
-					draw_rect(chunk_rect, Color(0.2, 0.8, 0.2, 0.35))
-					draw_rect(chunk_rect, Color(0.2, 0.9, 0.2, 0.8), false, 2.0)
+					draw_rect(chunk_rect, COLOR_LOD_CLEARED_FILL)
+					draw_rect(chunk_rect, COLOR_LOD_CLEARED_BORDER, false, 2.0)
 				elif chunk_data.is_locked:
 					# 🟥 Locked Chunk
-					draw_rect(chunk_rect, Color(0.9, 0.1, 0.1, 0.4))
-					draw_rect(chunk_rect, Color(0.9, 0.2, 0.2, 0.8), false, 2.0)
+					draw_rect(chunk_rect, COLOR_LOD_LOCKED_FILL)
+					draw_rect(chunk_rect, COLOR_LOD_LOCKED_BORDER, false, 2.0)
 				elif chunk_data.revealed_safe_cells > 0:
 					# 🟦 Exploring Chunk with progress tint
 					var progress = chunk_data.get_progress()
 					draw_rect(chunk_rect, Color(0.2, 0.5, 0.9, lerp(0.15, 0.5, progress)))
-					draw_rect(chunk_rect, Color(0.3, 0.6, 0.9, 0.7), false, 2.0)
-				else:
-					# ⬛ Instantiated but Unexplored Chunk
-					draw_rect(chunk_rect, Color(0.18, 0.18, 0.18, 0.6))
-					draw_rect(chunk_rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
-			else:
-				# ⬛ Unexplored Chunk
-				draw_rect(chunk_rect, Color(0.18, 0.18, 0.18, 0.6))
-				draw_rect(chunk_rect, Color(0.3, 0.3, 0.3, 0.4), false, 1.0)
+					draw_rect(chunk_rect, COLOR_LOD_EXPLORING_BORDER, false, 2.0)
 
 func _get_number_color(number: int) -> Color:
-	match number:
-		1: return Color(0.1, 0.3, 0.9)
-		2: return Color(0.1, 0.7, 0.2)
-		3: return Color(0.9, 0.1, 0.1)
-		4: return Color(0.5, 0.1, 0.7)
-		5: return Color(0.7, 0.4, 0.1)
-		6: return Color(0.1, 0.7, 0.7)
-		7: return Color(0.1, 0.1, 0.1)
-		8: return Color(0.5, 0.5, 0.5)
-		_: return Color.BLACK
+	if number >= 0 and number < NUMBER_COLORS.size():
+		return NUMBER_COLORS[number]
+	return Color.BLACK
 
 func serialize() -> Dictionary:
 	var serialized_cells = []
 	for p in grid_data:
 		var cell = grid_data[p]
-		serialized_cells.append({
-			"x": p.x,
-			"y": p.y,
-			"is_mine": cell.is_mine,
-			"is_revealed": cell.is_revealed,
-			"is_flagged": cell.is_flagged
-		})
+		if cell.is_revealed or cell.is_flagged:
+			serialized_cells.append({
+				"x": p.x,
+				"y": p.y,
+				"is_mine": cell.is_mine,
+				"is_revealed": cell.is_revealed,
+				"is_flagged": cell.is_flagged
+			})
 
 	return {
 		"world_seed": world_seed,

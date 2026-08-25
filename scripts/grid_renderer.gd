@@ -14,6 +14,8 @@ var current_zoom_level: float = 1.0
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
 var _default_msdf_font: Font = null
 
+const DEFAULT_FONT_PATH: String = "res://assets/fonts/NotoSans-Bold.ttf"
+
 const NUMBER_STRINGS: Array[String] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
 const NUMBER_COLORS: Array[Color] = [
 	Color.BLACK,
@@ -129,12 +131,20 @@ func _get_active_font() -> Font:
 	if custom_font != null:
 		return custom_font
 	if _default_msdf_font == null:
-		var sys_font = SystemFont.new()
-		sys_font.font_names = PackedStringArray(["Sans-Serif", "Segoe UI", "Arial", "Roboto", "Helvetica", "Noto Sans"])
-		sys_font.multichannel_signed_distance_field = true
-		sys_font.msdf_pixel_range = 16
-		sys_font.msdf_size = 48
-		_default_msdf_font = sys_font
+		if ResourceLoader.exists(DEFAULT_FONT_PATH):
+			var font_file = load(DEFAULT_FONT_PATH) as FontFile
+			if font_file != null:
+				font_file.multichannel_signed_distance_field = true
+				font_file.msdf_pixel_range = 16
+				font_file.msdf_size = 48
+				_default_msdf_font = font_file
+		if _default_msdf_font == null:
+			var sys_font = SystemFont.new()
+			sys_font.font_names = PackedStringArray(["Sans-Serif", "Segoe UI", "Arial", "Roboto", "Helvetica", "Noto Sans"])
+			sys_font.multichannel_signed_distance_field = true
+			sys_font.msdf_pixel_range = 16
+			sys_font.msdf_size = 48
+			_default_msdf_font = sys_font
 	return _default_msdf_font
 
 func _get_number_color(number: int) -> Color:

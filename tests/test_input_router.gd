@@ -55,6 +55,10 @@ func _init():
 	if not test_binding_helpers():
 		success = false
 
+	# Test 12: Drag Immediately After Chord Reveal
+	if not test_drag_immediately_after_chord_reveal():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -577,3 +581,88 @@ func test_binding_helpers() -> bool:
 	camera.free()
 	print("[PASS] Test 11: Binding helpers integration verified")
 	return true
+
+func test_drag_immediately_after_chord_reveal() -> bool:
+	print("[RUN] Test 12: Drag Immediately After Chord Reveal")
+	var router = InputRouter.new()
+	router.drag_threshold = 6.0
+	var chord_positions: Array[Vector2i] = []
+	var flag_positions: Array[Vector2i] = []
+	var pan_offsets: Array[Vector2] = []
+	var reveal_positions: Array[Vector2i] = []
+
+	router.cell_chord_requested.connect(func(pos: Vector2i): chord_positions.append(pos))
+	router.cell_flag_toggled.connect(func(pos: Vector2i): flag_positions.append(pos))
+	router.camera_pan_requested.connect(func(rel: Vector2): pan_offsets.append(rel))
+	router.cell_reveal_requested.connect(func(pos: Vector2i): reveal_positions.append(pos))
+
+	var revealed_map: Dictionary = {Vector2i(0, 0): true}
+	router.is_cell_revealed_query = func(pos: Vector2i) -> bool:
+		return revealed_map.get(pos, false)
+
+	# 1. Simulate Touch Chord Reveal on cell (0, 0)
+	var touch_pos = Vector2(16, 16)
+	router.process_input(_create_touch_event(0, true, touch_pos))
+	router.process_input(_create_touch_event(0, false, touch_pos))
+
+	if chord_positions.size() != 1 or chord_positions[0] != Vector2i(0, 0):
+		print("[FAIL] Initial touch chord reveal failed")
+		router.free()
+		return false
+
+	# 2. Right-Click Drag immediately (< 250ms) after touch chord reveal
+	var rmb_start_pos = Vector2(16, 16)
+	var rmb_drag_pos = rmb_start_pos + Vector2(40, 20)
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_RIGHT, true, rmb_start_pos))
+	router.process_input(_create_mouse_motion_event(rmb_drag_pos, Vector2(40, 20)))
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_RIGHT, false, rmb_drag_pos))
+
+	if pan_offsets.size() == 0 or pan_offsets[0] != Vector2(40, 20):
+		print("[FAIL] Right-click drag was locked out immediately after chord reveal. pan_offsets: ", pan_offsets)
+		router.free()
+		return false
+
+	if flag_positions.size() != 0:
+		print("[FAIL] Flag was erroneously placed after right-click drag")
+		router.free()
+		return false
+
+	# 3. Middle-Click Drag immediately (< 250ms) after another touch chord reveal
+	pan_offsets.clear()
+	chord_positions.clear()
+	router.process_input(_create_touch_event(0, true, touch_pos))
+	router.process_input(_create_touch_event(0, false, touch_pos))
+	if chord_positions.size() != 1:
+		print("[FAIL] Second touch chord reveal failed")
+		router.free()
+		return false
+
+	var mmb_start_pos = Vector2(16, 16)
+	var mmb_drag_pos = mmb_start_pos + Vector2(-30, 50)
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_MIDDLE, true, mmb_start_pos))
+	router.process_input(_create_mouse_motion_event(mmb_drag_pos, Vector2(-30, 50)))
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_MIDDLE, false, mmb_drag_pos))
+
+	if pan_offsets.size() == 0 or pan_offsets[0] != Vector2(-30, 50):
+		print("[FAIL] Middle-click drag was locked out immediately after chord reveal. pan_offsets: ", pan_offsets)
+		router.free()
+		return false
+
+	if chord_positions.size() != 1:
+		print("[FAIL] Middle-click drag erroneously triggered chord reveal on release")
+		router.free()
+		return false
+
+	# 4. Verify Synthetic Left-Click is STILL suppressed within 250ms of touch release
+	reveal_positions.clear()
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_LEFT, true, Vector2(48, 48)))
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_LEFT, false, Vector2(48, 48)))
+	if reveal_positions.size() != 0:
+		print("[FAIL] Synthetic left-click was NOT suppressed during touch cooldown")
+		router.free()
+		return false
+
+	router.free()
+	print("[PASS] Test 12: Drag Immediately After Chord Reveal verified")
+	return true
+

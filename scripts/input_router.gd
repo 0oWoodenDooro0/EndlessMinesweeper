@@ -229,8 +229,11 @@ func _handle_screen_drag(event: InputEventScreenDrag) -> void:
 			_pinch_previous_center = curr_center
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
-	if _is_single_touch_active or _is_multi_touch_active or (_last_touch_time_msec > 0 and Time.get_ticks_msec() - _last_touch_time_msec < 250):
+	if _is_single_touch_active or _is_multi_touch_active:
 		return
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		if _last_touch_time_msec > 0 and Time.get_ticks_msec() - _last_touch_time_msec < 250:
+			return
 	var world_pos = _get_mouse_world_pos(event)
 	_last_mouse_world_pos = world_pos
 	var cell_pos = world_to_cell(world_pos)

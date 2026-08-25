@@ -412,6 +412,16 @@ func _on_chunk_manager_cleared(c_pos: Vector2i) -> void:
 	_request_redraw()
 
 func _on_chunk_manager_unlocked(c_pos: Vector2i, recovered_mines: Array[Vector2i]) -> void:
+	if chunk_manager != null:
+		var safe_positions = chunk_manager.get_chunk_safe_positions(c_pos)
+		for pos in safe_positions:
+			var cell = get_cell(pos)
+			if cell.is_flagged:
+				cell.is_flagged = false
+				cell_flag_changed.emit(pos, false)
+				if session != null:
+					session.record_flag_toggle(pos, false)
+
 	for m_pos in recovered_mines:
 		var m_cell = get_cell(m_pos)
 		m_cell.is_revealed = false

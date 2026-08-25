@@ -396,12 +396,13 @@ func test_keyboard_space_reveal_after_restart() -> bool:
 	hud.setup_ui_nodes()
 	hud.bind_grid_manager(grid)
 
-	# Configure cells: cell (0,0) safe, cell (1,0) mine
-	grid.set_mine_at(Vector2i(0, 0), false)
-	grid.set_mine_at(Vector2i(1, 0), true)
-
 	# Simulate pressing Restart button on HUD
 	hud.restart_button.emit_signal("pressed")
+
+	# Configure cells after restart: cell (0,0) safe, cell (1,0) mine
+	grid.safe_zone_radius = 0
+	grid.set_mine_at(Vector2i(0, 0), false)
+	grid.set_mine_at(Vector2i(1, 0), true)
 
 	# Verify button has released focus and has focus_mode == FOCUS_NONE
 	if hud.restart_button.focus_mode != Control.FOCUS_NONE:

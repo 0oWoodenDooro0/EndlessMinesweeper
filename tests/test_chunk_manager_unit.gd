@@ -150,6 +150,13 @@ func test_chunk_safe_cells_and_progress_calculation() -> bool:
 		print("[FAIL] Expected 13 safe cells after recalculation, got: ", chunk.total_safe_cells)
 		return false
 
+	# Test is_cleared defensive guard returns 1.0 even if revealed_safe_cells < total_safe_cells
+	chunk.is_cleared = true
+	if not is_equal_approx(chunk.get_progress(), 1.0):
+		print("[FAIL] Expected 1.0 progress when is_cleared is true, got: ", chunk.get_progress())
+		return false
+	chunk.is_cleared = false
+
 	print("[PASS] Test 2: Safe cells and progress calculation verified")
 	return true
 

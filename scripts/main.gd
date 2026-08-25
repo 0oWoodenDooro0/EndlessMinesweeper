@@ -4,6 +4,7 @@ extends Node2D
 const GameSession = preload("res://scripts/game_session.gd")
 const SaveManager = preload("res://scripts/save_manager.gd")
 const GridManager = preload("res://scripts/grid_manager.gd")
+const GridRenderer = preload("res://scripts/grid_renderer.gd")
 const HUD = preload("res://scripts/hud.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 const InputRouter = preload("res://scripts/input_router.gd")
@@ -17,6 +18,7 @@ const InputRouter = preload("res://scripts/input_router.gd")
 		_connect_signals()
 
 var grid_manager: GridManager
+var grid_renderer: GridRenderer
 var camera: CameraController
 var hud: HUD
 var input_router: InputRouter
@@ -41,7 +43,9 @@ func _ready() -> void:
 	_connect_signals()
 	if camera != null:
 		camera.force_update_visible_area()
-	if grid_manager != null:
+	if grid_renderer != null:
+		grid_renderer._request_redraw()
+	elif grid_manager != null:
 		grid_manager._request_redraw()
 
 func setup(path: String = "") -> void:
@@ -56,12 +60,17 @@ func setup(path: String = "") -> void:
 func _ensure_node_references() -> void:
 	if grid_manager == null:
 		grid_manager = get_node_or_null("GridManager") as GridManager
+	if grid_renderer == null:
+		grid_renderer = get_node_or_null("GridRenderer") as GridRenderer
 	if camera == null:
 		camera = get_node_or_null("Camera2D") as CameraController
 	if hud == null:
 		hud = get_node_or_null("HUD") as HUD
 	if input_router == null:
 		input_router = get_node_or_null("InputRouter") as InputRouter
+
+	if grid_renderer != null and grid_manager != null:
+		grid_renderer.bind_grid_manager(grid_manager)
 
 	if hud != null:
 		hud.setup_ui_nodes()
@@ -85,7 +94,9 @@ func _try_auto_load() -> void:
 			_is_loaded = true
 			if camera != null:
 				camera.force_update_visible_area()
-			if grid_manager != null:
+			if grid_renderer != null:
+				grid_renderer._request_redraw()
+			elif grid_manager != null:
 				grid_manager._request_redraw()
 
 func _connect_signals() -> void:

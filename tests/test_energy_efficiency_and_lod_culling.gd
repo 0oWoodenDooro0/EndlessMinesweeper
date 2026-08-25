@@ -1,6 +1,7 @@
 @tool
 extends SceneTree
 
+const GridRenderer = preload("res://scripts/grid_renderer.gd")
 const GridManager = preload("res://scripts/grid_manager.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 const ChunkManager = preload("res://scripts/chunk_manager.gd")
@@ -189,11 +190,13 @@ func test_lod_zoom_out_zero_chunk_allocation() -> bool:
 func test_lod_draw_non_allocating_state_accuracy() -> bool:
 	print("[RUN] Test 4: LOD Drawing Non-Allocating State Accuracy")
 	var grid = GridManager.new()
+	var renderer = GridRenderer.new()
 	grid.world_seed = 777
 	grid.chunk_size = Vector2i(8, 8)
 	grid.cell_size = Vector2i(32, 32)
-	grid.visible_rect = Rect2(-2000, -2000, 4000, 4000)
-	grid.current_zoom_level = 0.3 # LOD mode
+	renderer.bind_grid_manager(grid)
+	renderer.visible_rect = Rect2(-2000, -2000, 4000, 4000)
+	renderer.current_zoom_level = 0.3 # LOD mode
 
 	# Manually setup specific chunks:
 	# 1. Cleared chunk at (0, 0)
@@ -212,23 +215,27 @@ func test_lod_draw_non_allocating_state_accuracy() -> bool:
 	var expected_chunk_count = grid.chunk_manager.chunks.size()
 	if expected_chunk_count != 3:
 		print("[FAIL] Expected 3 registered chunks before draw, got: ", expected_chunk_count)
+		renderer.free()
 		grid.free()
 		return false
 
-	# Execute _draw() in LOD mode
-	grid._draw()
+	# Execute _draw() on renderer in LOD mode
+	renderer._draw()
 
 	# Verify that drawing does NOT instantiate any new unvisited ChunkData or CellData
 	if grid.chunk_manager.chunks.size() != expected_chunk_count:
 		print("[FAIL] LOD _draw() instantiated new ChunkData objects. Before: ", expected_chunk_count, ", After: ", grid.chunk_manager.chunks.size())
+		renderer.free()
 		grid.free()
 		return false
 
 	if grid.grid_data.size() != 0:
 		print("[FAIL] LOD _draw() instantiated CellData objects. Size: ", grid.grid_data.size())
+		renderer.free()
 		grid.free()
 		return false
 
+	renderer.free()
 	grid.free()
 	print("[PASS] Test 4: LOD drawing non-allocating state accuracy verified")
 	return true

@@ -104,18 +104,18 @@ func test_keyboard_reveal_cell() -> bool:
 
 	if not grid.get_cell(Vector2i(0, 0)).is_revealed:
 		print("[FAIL] Cell (0, 0) was not revealed upon Space key press")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	if grid.get_cell(Vector2i(1, 0)).is_revealed:
 		print("[FAIL] Cell (1, 0) should remain unrevealed")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 1: Space Key Press Reveal verified")
 	return true
 
@@ -144,8 +144,8 @@ func test_keyboard_flag_cell() -> bool:
 
 	if not grid.get_cell(target_cell_pos).is_flagged:
 		print("[FAIL] Cell (0, 1) was not flagged upon F key press")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# Press F again -> unflag cell
@@ -153,12 +153,12 @@ func test_keyboard_flag_cell() -> bool:
 
 	if grid.get_cell(target_cell_pos).is_flagged:
 		print("[FAIL] Cell (0, 1) was not unflagged upon second F key press")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 2: F Key Flag Toggle verified")
 	return true
 
@@ -192,12 +192,12 @@ func test_keyboard_chord_reveal() -> bool:
 	# Verify neighbor (0, 1) is revealed via chord
 	if not grid.get_cell(Vector2i(0, 1)).is_revealed:
 		print("[FAIL] Chord reveal was not triggered by Space key on revealed cell")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 3: Space Key Chord Reveal verified")
 	return true
 
@@ -226,8 +226,8 @@ func test_keyboard_echo_suppression() -> bool:
 
 	if not grid.get_cell(target_cell_pos).is_flagged:
 		print("[FAIL] Initial F press failed to flag cell")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# Send echo press F -> should NOT unflag cell
@@ -236,12 +236,12 @@ func test_keyboard_echo_suppression() -> bool:
 
 	if not grid.get_cell(target_cell_pos).is_flagged:
 		print("[FAIL] Echo F event was processed and erroneously unflagged the cell")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 4: Echo Suppression verified")
 	return true
 
@@ -272,19 +272,19 @@ func test_mouse_motion_target_tracking() -> bool:
 	# (0, 1) should be flagged
 	if not grid.get_cell(Vector2i(0, 1)).is_flagged:
 		print("[FAIL] Cell (0, 1) was not flagged after mouse motion update")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# (5, 5) should NOT be flagged
 	if grid.grid_data.has(Vector2i(5, 5)) and grid.grid_data[Vector2i(5, 5)].is_flagged:
 		print("[FAIL] Old mouse position (5, 5) was incorrectly flagged")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 5: Mouse Motion Target Tracking verified")
 	return true
 
@@ -308,8 +308,8 @@ func test_keyboard_game_over_constraint() -> bool:
 
 	if grid.grid_data.has(Vector2i(0, 0)) and grid.grid_data[Vector2i(0, 0)].is_revealed:
 		print("[FAIL] Space reveal succeeded while game was over")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# Press F
@@ -318,12 +318,12 @@ func test_keyboard_game_over_constraint() -> bool:
 
 	if grid.grid_data.has(Vector2i(0, 0)) and grid.grid_data[Vector2i(0, 0)].is_flagged:
 		print("[FAIL] F flag toggle succeeded while game was over")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 6: Game Over Constraint verified")
 	return true
 
@@ -350,16 +350,16 @@ func test_keyboard_chunk_and_frontier_restrictions() -> bool:
 	router.process_input(_create_key_event("reveal_cell", KEY_SPACE, true, false))
 	if grid.grid_data.has(distant_cell) and grid.grid_data[distant_cell].is_revealed:
 		print("[FAIL] Distant unattached cell was revealed violating frontier restriction")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# Try F on distant cell
 	router.process_input(_create_key_event("flag_cell", KEY_F, true, false))
 	if grid.grid_data.has(distant_cell) and grid.grid_data[distant_cell].is_flagged:
 		print("[FAIL] Distant unattached cell was flagged violating frontier restriction")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
 	# Case B: Locked chunk restriction
@@ -373,12 +373,12 @@ func test_keyboard_chunk_and_frontier_restrictions() -> bool:
 	router.process_input(_create_key_event("flag_cell", KEY_F, true, false))
 	if grid.get_cell(Vector2i(0, 1)).is_flagged:
 		print("[FAIL] Cell in locked chunk was flagged")
-		router.queue_free()
-		grid.queue_free()
+		router.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	grid.queue_free()
+	router.free()
+	grid.free()
 	print("[PASS] Test 7: Chunk and Frontier Restrictions verified")
 	return true
 
@@ -406,16 +406,16 @@ func test_keyboard_space_reveal_after_restart() -> bool:
 	# Verify button has released focus and has focus_mode == FOCUS_NONE
 	if hud.restart_button.focus_mode != Control.FOCUS_NONE:
 		print("[FAIL] restart_button focus_mode is not FOCUS_NONE after restart, got: ", hud.restart_button.focus_mode)
-		router.queue_free()
-		hud.queue_free()
-		grid.queue_free()
+		router.free()
+		hud.free()
+		grid.free()
 		return false
 
 	if hud.restart_button.has_focus():
 		print("[FAIL] restart_button has focus after pressing restart")
-		router.queue_free()
-		hud.queue_free()
-		grid.queue_free()
+		router.free()
+		hud.free()
+		grid.free()
 		return false
 
 	# Hover mouse at cell (0, 0) (world pos: 16, 16)
@@ -429,20 +429,23 @@ func test_keyboard_space_reveal_after_restart() -> bool:
 	# Verify cell (0, 0) is revealed and grid is not reset
 	if not grid.get_cell(Vector2i(0, 0)).is_revealed:
 		print("[FAIL] Cell (0, 0) was not revealed upon Space key press after restart")
-		router.queue_free()
-		hud.queue_free()
-		grid.queue_free()
+		router.free()
+		hud.free()
+		grid.free()
 		return false
 
 	if hud.revealed_count != 1:
 		print("[FAIL] HUD revealed_count should be 1 after reveal, got: ", hud.revealed_count)
-		router.queue_free()
-		hud.queue_free()
-		grid.queue_free()
+		router.free()
+		hud.free()
+		grid.free()
 		return false
 
-	router.queue_free()
-	hud.queue_free()
-	grid.queue_free()
+	root.remove_child(router)
+	root.remove_child(hud)
+	root.remove_child(grid)
+	router.free()
+	hud.free()
+	grid.free()
 	print("[PASS] Test 8: Space Reveal After Restart verified")
 	return true

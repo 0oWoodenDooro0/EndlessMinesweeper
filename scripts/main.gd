@@ -24,6 +24,7 @@ var save_manager: SaveManager = SaveManager.new()
 var auto_save_timer: float = 0.0
 const AUTO_SAVE_INTERVAL: float = 2.0
 var _is_loaded: bool = false
+var _is_dirty: bool = false
 
 func _enter_tree() -> void:
 	_ensure_node_references()
@@ -36,6 +37,10 @@ func _ready() -> void:
 	if not _is_loaded:
 		_try_auto_load()
 	_connect_signals()
+	if camera != null:
+		camera.force_update_visible_area()
+	if grid_manager != null:
+		grid_manager._request_redraw()
 
 func setup(path: String = "") -> void:
 	if path != "":
@@ -68,11 +73,17 @@ func _try_auto_load() -> void:
 		var success = save_manager.load_game_state(grid_manager, hud, camera, save_file_path)
 		if success:
 			_is_loaded = true
+			if camera != null:
+				camera.force_update_visible_area()
+			if grid_manager != null:
+				grid_manager._request_redraw()
 
 func _connect_signals() -> void:
 	if session != null:
 		if not session.is_connected("stats_changed", Callable(self, "_on_session_stats_changed")):
 			session.connect("stats_changed", Callable(self, "_on_session_stats_changed"))
+		if not session.is_connected("game_over", Callable(self, "_on_session_game_over")):
+			session.connect("game_over", Callable(self, "_on_session_game_over"))
 		if not session.is_connected("game_reset", Callable(self, "_on_session_game_reset")):
 			session.connect("game_reset", Callable(self, "_on_session_game_reset"))
 
@@ -81,22 +92,24 @@ func _connect_signals() -> void:
 			grid_manager.connect("game_reset", Callable(self, "_on_session_game_reset"))
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		save_game()
-
-func _process(delta: float) -> void:
-	if session != null and session.is_timer_running:
-		auto_save_timer += delta
-		if auto_save_timer >= AUTO_SAVE_INTERVAL:
-			auto_save_timer = 0.0
+	if what == NOTIFICATION_WM_CLOSE_REQUEST \
+		or what == NOTIFICATION_APPLICATION_PAUSED \
+		or what == NOTIFICATION_APPLICATION_FOCUS_OUT \
+		or what == NOTIFICATION_WM_GO_BACK_REQUEST \
+		or what == NOTIFICATION_PREDELETE:
+		if _is_dirty:
 			save_game()
 
 func save_game() -> void:
 	_ensure_node_references()
 	if grid_manager != null:
 		save_manager.save_game_state(grid_manager, hud, camera, save_file_path)
+		_is_dirty = false
 
 func _on_session_stats_changed(_stats: Dictionary = {}) -> void:
+	_is_dirty = true
+
+func _on_session_game_over(_hit_pos: Vector2i = Vector2i.ZERO) -> void:
 	save_game()
 
 func _on_session_game_reset() -> void:

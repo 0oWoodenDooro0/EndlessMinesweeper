@@ -329,6 +329,7 @@ func test_save_persistence_after_cascade_reveal() -> bool:
 
 	# Reveal origin to trigger cascade of 25 cells
 	grid.reveal_cell(Vector2i(2, 2))
+	main.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
 
 	if not sm.has_save(test_path):
 		print("[FAIL] Auto-save file was not created after cascade reveal")

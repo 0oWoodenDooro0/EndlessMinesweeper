@@ -274,7 +274,7 @@ func test_hud_no_manual_save_load_buttons() -> bool:
 	return true
 
 func test_auto_save_on_gameplay_actions() -> bool:
-	print("[RUN] Test 6: Auto-Save Triggered on Gameplay Actions")
+	print("[RUN] Test 6: Auto-Save Triggered on Pause/Exit Notification")
 	var sm = SaveManager.new()
 	var test_path = "user://test_autosave_action.json"
 	if sm.has_save(test_path):
@@ -291,11 +291,12 @@ func test_auto_save_on_gameplay_actions() -> bool:
 	grid.safe_zone_radius = 0
 	grid.set_mine_at(Vector2i(10, 9), true)
 
-	# 1. Action: Reveal cell -> should auto-save
+	# 1. Action: Reveal cell, then app paused -> should auto-save
 	grid.reveal_cell(Vector2i(10, 10))
+	main.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
 
 	if not sm.has_save(test_path):
-		print("[FAIL] Auto-save file was not created after reveal_cell")
+		print("[FAIL] Auto-save file was not created after pause notification")
 		main.queue_free()
 		return false
 
@@ -306,8 +307,9 @@ func test_auto_save_on_gameplay_actions() -> bool:
 		main.queue_free()
 		return false
 
-	# 2. Action: Toggle flag -> should auto-save updated flag
+	# 2. Action: Toggle flag, then window close request -> should auto-save updated flag
 	grid.toggle_flag(Vector2i(10, 11))
+	main.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
 	var save_data2 = sm.load_data_from_file(test_path)
 	var flag_found = false
 	for cell in save_data2["grid"]["cells"]:
@@ -324,7 +326,7 @@ func test_auto_save_on_gameplay_actions() -> bool:
 	# Clean up
 	sm.delete_save(test_path)
 	main.queue_free()
-	print("[PASS] Test 6: Auto-save on gameplay actions verified")
+	print("[PASS] Test 6: Auto-save on pause/exit notification verified")
 	return true
 
 func test_startup_auto_load() -> bool:

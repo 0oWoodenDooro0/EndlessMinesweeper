@@ -276,10 +276,15 @@ func bind_grid_manager(grid: GridManager) -> void:
 	if grid_manager != null:
 		grid_manager.bind_session(session)
 
+var _last_displayed_time_sec: int = -1
+
 func _process(delta: float) -> void:
 	if session != null and session.is_timer_running:
 		session.update(delta)
-		_update_time_label()
+		var current_sec = int(floor(elapsed_time))
+		if current_sec != _last_displayed_time_sec:
+			_last_displayed_time_sec = current_sec
+			_update_time_label()
 
 func format_time(seconds: float) -> String:
 	var total_sec = int(floor(seconds))
@@ -307,6 +312,7 @@ func _on_session_game_over(_hit_mine_pos: Vector2i) -> void:
 	show_game_over()
 
 func _on_session_game_reset() -> void:
+	_last_displayed_time_sec = -1
 	if game_over_modal != null:
 		game_over_modal.visible = false
 	_update_labels()

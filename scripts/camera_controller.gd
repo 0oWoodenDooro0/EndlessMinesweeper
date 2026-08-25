@@ -13,10 +13,25 @@ var target_position: Vector2 = Vector2.ZERO
 var is_panning: bool = false
 var custom_viewport_size: Vector2 = Vector2.ZERO
 
+var _last_notified_position: Vector2 = Vector2.INF
+var _last_notified_zoom: Vector2 = Vector2.INF
+
 func _ready() -> void:
 	target_position = position
 	target_zoom = zoom
 	_auto_find_grid_manager()
+	if is_inside_tree() and get_viewport() != null:
+		if not get_viewport().size_changed.is_connected(Callable(self, "_on_viewport_size_changed")):
+			get_viewport().size_changed.connect(Callable(self, "_on_viewport_size_changed"))
+	force_update_visible_area()
+
+func _on_viewport_size_changed() -> void:
+	force_update_visible_area()
+
+func force_update_visible_area() -> void:
+	_last_notified_position = Vector2.INF
+	_last_notified_zoom = Vector2.INF
+	_notify_grid_manager()
 
 func _auto_find_grid_manager() -> void:
 	if grid_manager != null:
@@ -63,13 +78,21 @@ func update_camera(delta: float) -> void:
 	if delta > 0.0:
 		zoom = zoom.lerp(target_zoom, min(1.0, zoom_smoothness * delta))
 		position = position.lerp(target_position, min(1.0, pan_smoothness * delta))
+
+		if position.distance_to(target_position) < 0.01:
+			position = target_position
+		if (zoom - target_zoom).length() < 0.001:
+			zoom = target_zoom
 	else:
 		zoom = target_zoom
 		position = target_position
 
-	_notify_grid_manager()
+	if not position.is_equal_approx(_last_notified_position) or not zoom.is_equal_approx(_last_notified_zoom):
+		_notify_grid_manager()
 
 func _notify_grid_manager() -> void:
+	_last_notified_position = position
+	_last_notified_zoom = zoom
 	if grid_manager != null:
 		var current_zoom_val = zoom.x if zoom.x > 0 else 1.0
 		grid_manager.update_visible_area(get_visible_world_rect(), current_zoom_val)
@@ -119,6 +142,8 @@ func deserialize(data: Dictionary) -> bool:
 	else:
 		target_zoom = zoom
 
+	_last_notified_position = Vector2.INF
+	_last_notified_zoom = Vector2.INF
 	_notify_grid_manager()
 	return true
 

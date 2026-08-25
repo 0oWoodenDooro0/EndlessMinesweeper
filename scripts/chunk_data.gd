@@ -12,6 +12,8 @@ func _init(p_chunk_pos: Vector2i = Vector2i.ZERO) -> void:
 	chunk_pos = p_chunk_pos
 
 func get_progress() -> float:
+	if is_cleared:
+		return 1.0
 	if total_safe_cells <= 0:
 		return 1.0
 	return clamp(float(revealed_safe_cells) / float(total_safe_cells), 0.0, 1.0)

@@ -44,6 +44,14 @@ func _init():
 	if not test_get_chunk_safe_positions():
 		success = false
 
+	# Test 10: are_all_chunk_mines_flagged Query & register_flag_toggle Chunk Clearance
+	if not test_are_all_chunk_mines_flagged_and_flag_toggle_clearance():
+		success = false
+
+	# Test 11: Locked Cluster Revival on Flag Toggle Chunk Clearance
+	if not test_locked_cluster_revival_on_flag_toggle_clearance():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL CHUNK MANAGER UNIT TESTS PASSED")
@@ -141,6 +149,13 @@ func test_chunk_safe_cells_and_progress_calculation() -> bool:
 	if chunk.total_safe_cells != 13:
 		print("[FAIL] Expected 13 safe cells after recalculation, got: ", chunk.total_safe_cells)
 		return false
+
+	# Test is_cleared defensive guard returns 1.0 even if revealed_safe_cells < total_safe_cells
+	chunk.is_cleared = true
+	if not is_equal_approx(chunk.get_progress(), 1.0):
+		print("[FAIL] Expected 1.0 progress when is_cleared is true, got: ", chunk.get_progress())
+		return false
+	chunk.is_cleared = false
 
 	print("[PASS] Test 2: Safe cells and progress calculation verified")
 	return true
@@ -562,4 +577,176 @@ func test_get_chunk_safe_positions() -> bool:
 
 	print("[PASS] Test 9: get_chunk_safe_positions verified")
 	return true
+
+func test_are_all_chunk_mines_flagged_and_flag_toggle_clearance() -> bool:
+	print("[RUN] Test 10: are_all_chunk_mines_flagged Query & register_flag_toggle Chunk Clearance")
+	var mines: Dictionary = {
+		Vector2i(0, 0): true,
+		Vector2i(1, 1): true
+	}
+	var is_mine_cb = func(pos: Vector2i) -> bool:
+		return mines.get(pos, false)
+
+	var revealed_cells: Dictionary = {}
+	var is_revealed_cb = func(pos: Vector2i) -> bool:
+		return revealed_cells.get(pos, false)
+
+	var flagged_cells: Dictionary = {}
+	var is_flagged_cb = func(pos: Vector2i) -> bool:
+		return flagged_cells.get(pos, false)
+
+	var cm = ChunkManager.new()
+	cm.setup(Vector2i(2, 2), is_mine_cb, is_revealed_cb, is_flagged_cb)
+
+	# 1. are_all_chunk_mines_flagged query checks
+	if cm.are_all_chunk_mines_flagged(Vector2i(0, 0)):
+		print("[FAIL] are_all_chunk_mines_flagged should be false when 0 mines flagged")
+		return false
+
+	# Non-existent/no-mine chunk should return false
+	if cm.are_all_chunk_mines_flagged(Vector2i(5, 5)):
+		print("[FAIL] are_all_chunk_mines_flagged should be false for chunk with 0 mines")
+		return false
+
+	var cleared_signals: Array[Vector2i] = []
+	cm.chunk_cleared.connect(func(c_pos: Vector2i):
+		cleared_signals.append(c_pos)
+	)
+
+	# 2. Flag first mine at (0, 0)
+	flagged_cells[Vector2i(0, 0)] = true
+	var res1 = cm.register_flag_toggle(Vector2i(0, 0), true)
+	if res1.get("action") != "flagged":
+		print("[FAIL] Expected action 'flagged' for 1st mine, got: ", res1)
+		return false
+	if cm.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should not be cleared after only 1 of 2 mines flagged")
+		return false
+	if cm.are_all_chunk_mines_flagged(Vector2i(0, 0)):
+		print("[FAIL] are_all_chunk_mines_flagged should be false when 1 of 2 mines flagged")
+		return false
+
+	# 3. Flag a safe cell mistakenly at (1, 0)
+	flagged_cells[Vector2i(1, 0)] = true
+	var res_safe = cm.register_flag_toggle(Vector2i(1, 0), true)
+	if res_safe.get("action") != "flagged":
+		print("[FAIL] Expected action 'flagged' for safe cell flag, got: ", res_safe)
+		return false
+	if cm.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should not be cleared when safe cell is flagged instead of remaining mine")
+		return false
+
+	# 4. Flag second and final mine at (1, 1) -> Chunk clears!
+	flagged_cells[Vector2i(1, 1)] = true
+	var res2 = cm.register_flag_toggle(Vector2i(1, 1), true)
+	if res2.get("action") != "cleared":
+		print("[FAIL] Expected action 'cleared' when all mines flagged, got: ", res2)
+		return false
+
+	if not cm.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should be cleared after all mines flagged")
+		return false
+	if not cm.are_all_chunk_mines_flagged(Vector2i(0, 0)):
+		print("[FAIL] are_all_chunk_mines_flagged should be true after all mines flagged")
+		return false
+
+	var auto_flags: Array = res2.get("auto_flags", [])
+	if auto_flags.size() != 2 or not auto_flags.has(Vector2i(0, 0)) or not auto_flags.has(Vector2i(1, 1)):
+		print("[FAIL] auto_flags payload mismatch: ", auto_flags)
+		return false
+
+	if cleared_signals.size() != 1 or cleared_signals[0] != Vector2i(0, 0):
+		print("[FAIL] chunk_cleared signal not emitted properly on mine-flagged clear: ", cleared_signals)
+		return false
+
+	# 5. Subsequent flag toggle on already cleared chunk
+	var res_after = cm.register_flag_toggle(Vector2i(0, 0), false)
+	if res_after.get("action") != "none" and res_after.get("action") != "flagged":
+		print("[FAIL] Flag toggle on cleared chunk should return 'none' or 'flagged', got: ", res_after)
+		return false
+	if cleared_signals.size() != 1:
+		print("[FAIL] chunk_cleared signal should not be emitted again")
+		return false
+
+	print("[PASS] Test 10: are_all_chunk_mines_flagged & register_flag_toggle verified")
+	return true
+
+func test_locked_cluster_revival_on_flag_toggle_clearance() -> bool:
+	print("[RUN] Test 11: Locked Cluster Revival on Flag Toggle Chunk Clearance")
+	var mines: Dictionary = {
+		Vector2i(0, 0): true # Mine in center chunk (0, 0)
+	}
+	var neighbor_chunks: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+		Vector2i(-1,  0),                  Vector2i(1,  0),
+		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1)
+	]
+	for c_pos in neighbor_chunks:
+		mines[Vector2i(c_pos.x * 2, c_pos.y * 2)] = true # 1 mine at (x*2, y*2) per neighbor chunk
+
+	var is_mine_cb = func(pos: Vector2i) -> bool:
+		return mines.get(pos, false)
+
+	var flagged_cells: Dictionary = {}
+	var is_flagged_cb = func(pos: Vector2i) -> bool:
+		return flagged_cells.get(pos, false)
+
+	var cm = ChunkManager.new()
+	cm.setup(Vector2i(2, 2), is_mine_cb, Callable(), is_flagged_cb)
+
+	var unlocked_signals: Array[Dictionary] = []
+	cm.chunk_unlocked.connect(func(c_pos: Vector2i, recovered: Array[Vector2i]):
+		unlocked_signals.append({"chunk_pos": c_pos, "recovered": recovered})
+	)
+
+	# Lock center chunk (0, 0)
+	cm.register_reveal(Vector2i(0, 0), true, true)
+	if not cm.is_chunk_locked(Vector2i(0, 0)):
+		print("[FAIL] Center chunk (0, 0) should be locked")
+		return false
+
+	# Clear first 7 neighbor chunks via flag toggles
+	for i in range(7):
+		var c = neighbor_chunks[i]
+		var mine_p = Vector2i(c.x * 2, c.y * 2)
+		flagged_cells[mine_p] = true
+		cm.register_flag_toggle(mine_p, true)
+
+		if not cm.is_chunk_cleared(c):
+			print("[FAIL] Neighbor chunk ", c, " should be cleared via mine flag")
+			return false
+		if not cm.is_chunk_locked(Vector2i(0, 0)):
+			print("[FAIL] Center chunk unlocked prematurely at step ", i)
+			return false
+
+	# Clear 8th neighbor chunk via mine flag toggle -> Triggers center chunk revival
+	var last_c = neighbor_chunks[7]
+	var last_mine_p = Vector2i(last_c.x * 2, last_c.y * 2)
+	flagged_cells[last_mine_p] = true
+	var res_last = cm.register_flag_toggle(last_mine_p, true)
+
+	if not cm.is_chunk_cleared(last_c):
+		print("[FAIL] 8th neighbor chunk was not cleared")
+		return false
+
+	if cm.is_chunk_locked(Vector2i(0, 0)):
+		print("[FAIL] Center chunk (0, 0) should be unlocked after all 8 neighbors are cleared via flag toggle")
+		return false
+
+	if unlocked_signals.size() != 1:
+		print("[FAIL] Expected 1 chunk_unlocked signal, got: ", unlocked_signals.size())
+		return false
+
+	if unlocked_signals[0]["chunk_pos"] != Vector2i(0, 0) or not unlocked_signals[0]["recovered"].has(Vector2i(0, 0)):
+		print("[FAIL] chunk_unlocked payload mismatch: ", unlocked_signals[0])
+		return false
+
+	var unlocked_dict: Dictionary = res_last.get("unlocked", {})
+	if not unlocked_dict.has(Vector2i(0, 0)):
+		print("[FAIL] register_flag_toggle return payload missing unlocked center chunk: ", res_last)
+		return false
+
+	print("[PASS] Test 11: Locked cluster revival on flag toggle clearance verified")
+	return true
+
 

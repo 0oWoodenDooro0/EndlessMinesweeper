@@ -11,11 +11,13 @@ var chunk_size: Vector2i = Vector2i(8, 8)
 var chunks: Dictionary = {} # Vector2i -> ChunkData
 var is_mine_provider: Callable = Callable()
 var is_cell_revealed_provider: Callable = Callable()
+var is_cell_flagged_provider: Callable = Callable()
 
-func setup(p_chunk_size: Vector2i = Vector2i(8, 8), p_is_mine_provider: Callable = Callable(), p_is_revealed_provider: Callable = Callable()) -> void:
+func setup(p_chunk_size: Vector2i = Vector2i(8, 8), p_is_mine_provider: Callable = Callable(), p_is_revealed_provider: Callable = Callable(), p_is_flagged_provider: Callable = Callable()) -> void:
 	chunk_size = p_chunk_size
 	is_mine_provider = p_is_mine_provider
 	is_cell_revealed_provider = p_is_revealed_provider
+	is_cell_flagged_provider = p_is_flagged_provider
 
 func cell_to_chunk(cell_pos: Vector2i) -> Vector2i:
 	return Vector2i(
@@ -119,6 +121,42 @@ func get_chunk_safe_positions(c_pos: Vector2i) -> Array[Vector2i]:
 				continue
 			safe_positions.append(p)
 	return safe_positions
+
+func are_all_chunk_mines_flagged(c_pos: Vector2i) -> bool:
+	var mines = get_chunk_mine_positions(c_pos)
+	if mines.is_empty():
+		return false
+	if not is_cell_flagged_provider.is_valid():
+		return false
+	for m in mines:
+		if not is_cell_flagged_provider.call(m):
+			return false
+	return true
+
+func register_flag_toggle(cell_pos: Vector2i, is_flagged: bool) -> Dictionary:
+	var chunk = get_chunk_for_cell(cell_pos)
+	if chunk.is_locked or chunk.is_cleared:
+		return {
+			"action": "none",
+			"chunk_pos": chunk.chunk_pos
+		}
+
+	if is_flagged and are_all_chunk_mines_flagged(chunk.chunk_pos):
+		chunk.is_cleared = true
+		var auto_flags = get_chunk_mine_positions(chunk.chunk_pos)
+		chunk_cleared.emit(chunk.chunk_pos)
+		var unlocked = _check_neighbors_unlock(chunk.chunk_pos)
+		return {
+			"action": "cleared",
+			"chunk_pos": chunk.chunk_pos,
+			"auto_flags": auto_flags,
+			"unlocked": unlocked
+		}
+
+	return {
+		"action": "flagged",
+		"chunk_pos": chunk.chunk_pos
+	}
 
 func register_reveal(cell_pos: Vector2i, is_mine: bool, enable_chunk_lockout: bool = true) -> Dictionary:
 	var chunk = get_chunk_for_cell(cell_pos)

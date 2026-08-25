@@ -2,6 +2,7 @@
 .godot/
 export_presets.cfg
 *.uid
+build/
 
 # OS / Editor ignores
 .DS_Store

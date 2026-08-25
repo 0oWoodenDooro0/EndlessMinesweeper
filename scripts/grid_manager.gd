@@ -51,10 +51,13 @@ func _init() -> void:
 func is_cell_revealed(pos: Vector2i) -> bool:
 	return grid_data.has(pos) and grid_data[pos].is_revealed
 
+func is_cell_flagged(pos: Vector2i) -> bool:
+	return grid_data.has(pos) and grid_data[pos].is_flagged
+
 func _init_chunk_manager() -> void:
 	if chunk_manager == null:
 		chunk_manager = ChunkManager.new()
-		chunk_manager.setup(chunk_size, Callable(self, "is_mine_at"), Callable(self, "_is_cell_revealed_safe"))
+		chunk_manager.setup(chunk_size, Callable(self, "is_mine_at"), Callable(self, "_is_cell_revealed_safe"), Callable(self, "is_cell_flagged"))
 		chunk_manager.chunk_locked.connect(_on_chunk_manager_locked)
 		chunk_manager.chunk_cleared.connect(_on_chunk_manager_cleared)
 		chunk_manager.chunk_unlocked.connect(_on_chunk_manager_unlocked)
@@ -439,6 +442,8 @@ func toggle_flag(pos: Vector2i) -> void:
 	cell_flag_changed.emit(pos, cell.is_flagged)
 	if session != null:
 		session.record_flag_toggle(pos, cell.is_flagged)
+	if chunk_manager != null:
+		var _outcome = chunk_manager.register_flag_toggle(pos, cell.is_flagged)
 	_request_redraw()
 
 func chord_reveal(pos: Vector2i) -> bool:

@@ -57,6 +57,14 @@ func _init():
 	if not test_auto_reveal_safe_cells_on_chunk_clear():
 		success = false
 
+	# Test 13: Chunk Clear on All Mines Flagged Integration
+	if not test_chunk_clear_on_all_mines_flagged_integration():
+		success = false
+
+	# Test 14: Chunk Clear on Mines Flagged with Misplaced Flags
+	if not test_chunk_clear_on_mines_flagged_with_misplaced_flags():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -1046,5 +1054,207 @@ func test_auto_reveal_safe_cells_on_chunk_clear() -> bool:
 	grid2.free()
 	print("[PASS] Test 12: Auto-reveal safe cells, misplaced flag cleanup & zero BFS cascade verified")
 	return true
+
+func test_chunk_clear_on_all_mines_flagged_integration() -> bool:
+	print("[RUN] Test 13: Chunk Clear on All Mines Flagged Integration")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.set_first_click(Vector2i(100, 100))
+
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# Setup Chunk (0, 0): Mines at (0, 0) and (1, 1), Safe at (1, 0) and (0, 1)
+	var m1 = Vector2i(0, 0)
+	var m2 = Vector2i(1, 1)
+	var s1 = Vector2i(1, 0)
+	var s2 = Vector2i(0, 1)
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(m2, true)
+	grid.set_mine_at(s1, false)
+	grid.set_mine_at(s2, false)
+
+	# Anchors around Chunk (0, 0) so frontier allows flagging
+	grid.get_cell(Vector2i(-1, 0)).is_revealed = true
+	grid.get_cell(Vector2i(0, -1)).is_revealed = true
+	grid.get_cell(Vector2i(2, 1)).is_revealed = true
+
+	var chunk_cleared_events: Array[Vector2i] = []
+	grid.connect("chunk_cleared", func(c_pos: Vector2i):
+		chunk_cleared_events.append(c_pos)
+	)
+
+	# 1. Flag first mine m1 (0, 0)
+	grid.toggle_flag(m1)
+	if hud.flag_count != 1:
+		print("[FAIL] HUD flag_count should be 1 after 1st flag, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+	if grid.chunk_manager.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk should not be cleared after flagging only 1 of 2 mines")
+		hud.free()
+		grid.free()
+		return false
+
+	# 2. Flag second mine m2 (1, 1) -> triggers chunk clearance!
+	grid.toggle_flag(m2)
+
+	if not grid.chunk_manager.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should be cleared after all mines are flagged")
+		hud.free()
+		grid.free()
+		return false
+
+	if chunk_cleared_events.size() != 1 or chunk_cleared_events[0] != Vector2i(0, 0):
+		print("[FAIL] chunk_cleared signal not received properly: ", chunk_cleared_events)
+		hud.free()
+		grid.free()
+		return false
+
+	# Safe cells s1 and s2 should be auto-revealed
+	var cell_s1 = grid.get_cell(s1)
+	var cell_s2 = grid.get_cell(s2)
+	if not cell_s1.is_revealed or not cell_s2.is_revealed:
+		print("[FAIL] Safe cells not auto-revealed upon mine-flagged chunk clear: s1.revealed=", cell_s1.is_revealed, " s2.revealed=", cell_s2.is_revealed)
+		hud.free()
+		grid.free()
+		return false
+
+	# Mines m1 and m2 should both be flagged
+	var cell_m1 = grid.get_cell(m1)
+	var cell_m2 = grid.get_cell(m2)
+	if not cell_m1.is_flagged or not cell_m2.is_flagged:
+		print("[FAIL] Mines should remain flagged after chunk clear")
+		hud.free()
+		grid.free()
+		return false
+
+	# HUD statistics synchronization
+	if hud.cleared_chunks_count != 1:
+		print("[FAIL] HUD cleared_chunks_count should be 1, got: ", hud.cleared_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.flag_count != 2:
+		print("[FAIL] HUD flag_count should be 2, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.revealed_count != 2:
+		print("[FAIL] HUD revealed_count should be 2, got: ", hud.revealed_count)
+		hud.free()
+		grid.free()
+		return false
+
+	hud.free()
+	grid.free()
+	print("[PASS] Test 13: Chunk clear on all mines flagged integration verified")
+	return true
+
+func test_chunk_clear_on_mines_flagged_with_misplaced_flags() -> bool:
+	print("[RUN] Test 14: Chunk Clear on Mines Flagged with Misplaced Flags")
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.set_first_click(Vector2i(100, 100))
+
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# Setup Chunk (0, 0): Mines at (0, 0) and (1, 1), Safe at (1, 0) and (0, 1)
+	var m1 = Vector2i(0, 0)
+	var m2 = Vector2i(1, 1)
+	var s1 = Vector2i(1, 0)
+	var s2 = Vector2i(0, 1)
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(m2, true)
+	grid.set_mine_at(s1, false)
+	grid.set_mine_at(s2, false)
+
+	grid.get_cell(Vector2i(-1, 0)).is_revealed = true
+	grid.get_cell(Vector2i(0, -1)).is_revealed = true
+	grid.get_cell(Vector2i(2, 1)).is_revealed = true
+
+	# 1. Place a misplaced flag on safe cell s1 (1, 0)
+	grid.toggle_flag(s1)
+	if hud.flag_count != 1:
+		print("[FAIL] Expected flag_count 1 after misplaced flag, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# 2. Flag mine m1 (0, 0)
+	grid.toggle_flag(m1)
+	if hud.flag_count != 2:
+		print("[FAIL] Expected flag_count 2 after flagging m1, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+	if grid.chunk_manager.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk should not clear while m2 remains unflagged")
+		hud.free()
+		grid.free()
+		return false
+
+	# 3. Flag mine m2 (1, 1) -> all actual mines flagged -> triggers chunk clearance
+	grid.toggle_flag(m2)
+
+	if not grid.chunk_manager.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk should be cleared after all mines are flagged")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify misplaced flag on s1 was removed and s1 is revealed
+	var cell_s1 = grid.get_cell(s1)
+	if cell_s1.is_flagged:
+		print("[FAIL] Misplaced flag on s1 was not removed")
+		hud.free()
+		grid.free()
+		return false
+	if not cell_s1.is_revealed:
+		print("[FAIL] Safe cell s1 was not revealed")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify safe cell s2 is revealed
+	var cell_s2 = grid.get_cell(s2)
+	if not cell_s2.is_revealed:
+		print("[FAIL] Safe cell s2 was not revealed")
+		hud.free()
+		grid.free()
+		return false
+
+	# Verify HUD statistics reconciliation: exactly 2 flags (m1, m2), 2 revealed safe cells, 1 cleared chunk
+	if hud.flag_count != 2:
+		print("[FAIL] HUD flag_count should be 2 after misplaced flag removal, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.revealed_count != 2:
+		print("[FAIL] HUD revealed_count should be 2, got: ", hud.revealed_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.cleared_chunks_count != 1:
+		print("[FAIL] HUD cleared_chunks_count should be 1, got: ", hud.cleared_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	hud.free()
+	grid.free()
+	print("[PASS] Test 14: Chunk clear on mines flagged with misplaced flags verified")
+	return true
+
 
 

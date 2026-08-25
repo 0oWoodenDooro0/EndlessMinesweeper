@@ -65,6 +65,10 @@ func _init():
 	if not test_chunk_clear_on_mines_flagged_with_misplaced_flags():
 		success = false
 
+	# Test 15: Unlocked Chunk Clears Misplaced Flags on Safe Cells
+	if not test_unlocked_chunk_clears_misplaced_flags():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -1255,6 +1259,293 @@ func test_chunk_clear_on_mines_flagged_with_misplaced_flags() -> bool:
 	grid.free()
 	print("[PASS] Test 14: Chunk clear on mines flagged with misplaced flags verified")
 	return true
+
+func test_unlocked_chunk_clears_misplaced_flags() -> bool:
+	print("[RUN] Test 15: Unlocked Chunk Clears Misplaced Flags on Safe Cells")
+
+	# --- Subtest A: Single Locked Chunk Unlock with Misplaced Flag on Safe Cell ---
+	var grid = GridManager.new()
+	grid.chunk_size = Vector2i(2, 2)
+	grid.set_first_click(Vector2i(100, 100))
+
+	var hud = HUD.new()
+	hud.setup_ui_nodes()
+	hud.bind_grid_manager(grid)
+
+	# Setup Chunk (0, 0): Mines at (0, 0) and (1, 1), Safe at (1, 0) and (0, 1)
+	var m1 = Vector2i(0, 0) # detonated mine
+	var m2 = Vector2i(1, 1) # pre-flagged actual mine
+	var s1 = Vector2i(1, 0) # safe cell with misplaced flag
+	var s2 = Vector2i(0, 1) # unflagged safe cell
+
+	grid.set_mine_at(m1, true)
+	grid.set_mine_at(m2, true)
+	grid.set_mine_at(s1, false)
+	grid.set_mine_at(s2, false)
+
+	# Surrounding anchors so frontier allows interaction
+	grid.get_cell(Vector2i(-1, 0)).is_revealed = true
+	grid.get_cell(Vector2i(0, -1)).is_revealed = true
+	grid.get_cell(Vector2i(2, 1)).is_revealed = true
+
+	# 1. Place a misplaced flag on safe cell s1 (1, 0)
+	grid.toggle_flag(s1)
+	if hud.flag_count != 1:
+		print("[FAIL] Subtest A: Initial flag count mismatch after misplaced flag: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# 2. Correctly flag mine m2 (1, 1)
+	grid.toggle_flag(m2)
+	if hud.flag_count != 2:
+		print("[FAIL] Subtest A: Flag count should be 2 after flagging m2, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# 3. Detonate mine m1 (0, 0) -> causes Chunk (0, 0) lockout
+	grid.reveal_cell(m1)
+	var chunk0 = grid.get_chunk(Vector2i(0, 0))
+	if not chunk0.is_locked:
+		print("[FAIL] Subtest A: Chunk (0, 0) should be locked after mine hit")
+		hud.free()
+		grid.free()
+		return false
+	if hud.locked_chunks_count != 1:
+		print("[FAIL] Subtest A: HUD locked_chunks_count should be 1, got: ", hud.locked_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	var unflag_events: Array[Vector2i] = []
+	var flag_events: Array[Vector2i] = []
+	grid.connect("cell_flag_changed", func(pos: Vector2i, is_flagged: bool):
+		if is_flagged:
+			flag_events.append(pos)
+		else:
+			unflag_events.append(pos)
+	)
+
+	var unlocked_events: Array[Vector2i] = []
+	grid.connect("chunk_unlocked", func(c_pos: Vector2i, _recovered: Array[Vector2i]):
+		unlocked_events.append(c_pos)
+	)
+
+	# 4. Setup & Clear all 8 surrounding neighbor chunks (each with 1 mine, 3 safe cells)
+	var neighbor_chunks: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+		Vector2i(-1,  0),                  Vector2i(1,  0),
+		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1)
+	]
+
+	for c_pos in neighbor_chunks:
+		grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2), true)
+		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2), false)
+		grid.set_mine_at(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1), false)
+		grid.set_mine_at(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1), false)
+		grid.get_cell(Vector2i(c_pos.x * 2, c_pos.y * 2)).is_revealed = true # Anchor
+		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2))
+		grid.reveal_cell(Vector2i(c_pos.x * 2, c_pos.y * 2 + 1))
+		grid.reveal_cell(Vector2i(c_pos.x * 2 + 1, c_pos.y * 2 + 1))
+
+	# 5. Verify Chunk (0, 0) unlocked
+	if chunk0.is_locked:
+		print("[FAIL] Subtest A: Chunk (0, 0) should be unlocked after all 8 neighbors cleared")
+		hud.free()
+		grid.free()
+		return false
+
+	if not unlocked_events.has(Vector2i(0, 0)):
+		print("[FAIL] Subtest A: chunk_unlocked signal was not received for (0, 0)")
+		hud.free()
+		grid.free()
+		return false
+
+	# 6. Verify detonated mine m1 (0, 0) recovered as flag
+	var cell_m1 = grid.get_cell(m1)
+	if not cell_m1.is_flagged or cell_m1.is_revealed:
+		print("[FAIL] Subtest A: Detonated mine m1 was not converted to flag on unlock")
+		hud.free()
+		grid.free()
+		return false
+
+	# 7. Verify pre-flagged mine m2 (1, 1) remains flagged
+	var cell_m2 = grid.get_cell(m2)
+	if not cell_m2.is_flagged or cell_m2.is_revealed:
+		print("[FAIL] Subtest A: Pre-flagged mine m2 did not remain flagged")
+		hud.free()
+		grid.free()
+		return false
+
+	# 8. Verify misplaced flag on safe cell s1 (1, 0) was automatically cleared
+	var cell_s1 = grid.get_cell(s1)
+	if cell_s1.is_flagged:
+		print("[FAIL] Subtest A: Misplaced flag on safe cell s1 (1, 0) was NOT cleared on unlock")
+		hud.free()
+		grid.free()
+		return false
+	if cell_s1.is_revealed:
+		print("[FAIL] Subtest A: Safe cell s1 should not be revealed automatically on unlock")
+		hud.free()
+		grid.free()
+		return false
+	if not unflag_events.has(s1):
+		print("[FAIL] Subtest A: cell_flag_changed(s1, false) was not emitted on unlock")
+		hud.free()
+		grid.free()
+		return false
+
+	# 9. Verify safe cell s2 (0, 1) remains unflagged and unrevealed
+	var cell_s2 = grid.get_cell(s2)
+	if cell_s2.is_flagged or cell_s2.is_revealed:
+		print("[FAIL] Subtest A: Safe cell s2 corrupted on unlock")
+		hud.free()
+		grid.free()
+		return false
+
+	# 10. Verify HUD statistics: exactly 10 flags (8 from cleared neighbor chunks + m1 recovered + m2 kept), 0 locked chunks, 8 cleared neighbors
+	if hud.locked_chunks_count != 0:
+		print("[FAIL] Subtest A: HUD locked_chunks_count should be 0, got: ", hud.locked_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.flag_count != 10:
+		print("[FAIL] Subtest A: HUD flag_count should be 10, got: ", hud.flag_count)
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.cleared_chunks_count != 8:
+		print("[FAIL] Subtest A: HUD cleared_chunks_count should be 8, got: ", hud.cleared_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	# 11. Reveal safe cells s1 and s2 to complete chunk clearance
+	grid.reveal_cell(s1)
+	grid.reveal_cell(s2)
+
+	if not chunk0.is_cleared:
+		print("[FAIL] Subtest A: Chunk (0, 0) was not cleared after revealing safe cells")
+		hud.free()
+		grid.free()
+		return false
+
+	if hud.cleared_chunks_count != 9:
+		print("[FAIL] Subtest A: HUD cleared_chunks_count should be 9, got: ", hud.cleared_chunks_count)
+		hud.free()
+		grid.free()
+		return false
+
+	hud.free()
+	grid.free()
+
+	# --- Subtest B: Connected Multi-Chunk Locked Cluster Unlock with Misplaced Flags ---
+	var grid2 = GridManager.new()
+	grid2.chunk_size = Vector2i(2, 2)
+	grid2.set_first_click(Vector2i(100, 100))
+
+	var hud2 = HUD.new()
+	hud2.setup_ui_nodes()
+	hud2.bind_grid_manager(grid2)
+
+	var cA = Vector2i(0, 0)
+	var cB = Vector2i(1, 0)
+
+	var mA = Vector2i(0, 0) # mine in cA
+	var sA = Vector2i(1, 0) # safe cell in cA with misplaced flag
+	var mB = Vector2i(2, 0) # mine in cB
+	var sB = Vector2i(3, 0) # safe cell in cB with misplaced flag
+
+	grid2.set_mine_at(mA, true)
+	grid2.set_mine_at(sA, false)
+	grid2.set_mine_at(Vector2i(0, 1), false)
+	grid2.set_mine_at(Vector2i(1, 1), false)
+	grid2.get_cell(Vector2i(0, 1)).is_revealed = true # Anchor
+
+	grid2.set_mine_at(mB, true)
+	grid2.set_mine_at(sB, false)
+	grid2.set_mine_at(Vector2i(2, 1), false)
+	grid2.set_mine_at(Vector2i(3, 1), false)
+	grid2.get_cell(Vector2i(2, 1)).is_revealed = true # Anchor
+
+	# Misplaced flags on safe cells in both chunks
+	grid2.toggle_flag(sA)
+	grid2.toggle_flag(sB)
+	if hud2.flag_count != 2:
+		print("[FAIL] Subtest B: Expected 2 initial flags, got: ", hud2.flag_count)
+		hud2.free()
+		grid2.free()
+		return false
+
+	# Detonate mines in both chunks to lock the connected cluster
+	grid2.reveal_cell(mA)
+	grid2.reveal_cell(mB)
+
+	if not grid2.get_chunk(cA).is_locked or not grid2.get_chunk(cB).is_locked:
+		print("[FAIL] Subtest B: Both cluster chunks should be locked")
+		hud2.free()
+		grid2.free()
+		return false
+
+	# Clear the 10 perimeter chunks around {(0,0), (1,0)}
+	var perimeter_10: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1), Vector2i(2, -1),
+		Vector2i(-1,  0),                                   Vector2i(2,  0),
+		Vector2i(-1,  1), Vector2i(0,  1), Vector2i(1,  1), Vector2i(2,  1)
+	]
+
+	for p_chunk in perimeter_10:
+		grid2.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2), true)
+		grid2.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2), false)
+		grid2.set_mine_at(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1), false)
+		grid2.set_mine_at(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1), false)
+		grid2.get_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2)).is_revealed = true # Anchor
+		grid2.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2))
+		grid2.reveal_cell(Vector2i(p_chunk.x * 2, p_chunk.y * 2 + 1))
+		grid2.reveal_cell(Vector2i(p_chunk.x * 2 + 1, p_chunk.y * 2 + 1))
+
+	# Both chunks should be unlocked
+	if grid2.get_chunk(cA).is_locked or grid2.get_chunk(cB).is_locked:
+		print("[FAIL] Subtest B: Both cluster chunks should be unlocked")
+		hud2.free()
+		grid2.free()
+		return false
+
+	# Verify misplaced flags cleared on both safe cells
+	if grid2.get_cell(sA).is_flagged or grid2.get_cell(sB).is_flagged:
+		print("[FAIL] Subtest B: Misplaced flags in unlocked cluster were not cleared: sA.flagged=", grid2.get_cell(sA).is_flagged, " sB.flagged=", grid2.get_cell(sB).is_flagged)
+		hud2.free()
+		grid2.free()
+		return false
+
+	# Verify detonated mines recovered as flags
+	if not grid2.get_cell(mA).is_flagged or not grid2.get_cell(mB).is_flagged:
+		print("[FAIL] Subtest B: Detonated mines were not recovered as flags in cluster")
+		hud2.free()
+		grid2.free()
+		return false
+
+	# Verify HUD statistics: exactly 12 flags (10 from perimeter + mA recovered + mB recovered, sA and sB unflagged), 0 locked chunks
+	if hud2.flag_count != 12:
+		print("[FAIL] Subtest B: HUD flag_count should be 12, got: ", hud2.flag_count)
+		hud2.free()
+		grid2.free()
+		return false
+
+	if hud2.locked_chunks_count != 0:
+		print("[FAIL] Subtest B: HUD locked_chunks_count should be 0, got: ", hud2.locked_chunks_count)
+		hud2.free()
+		grid2.free()
+		return false
+
+	hud2.free()
+	grid2.free()
+	print("[PASS] Test 15: Unlocked chunk clears misplaced flags on safe cells verified")
+	return true
+
 
 
 

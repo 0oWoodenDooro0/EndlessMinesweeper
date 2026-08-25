@@ -37,6 +37,10 @@ func _init():
 	if not test_input_state_reset_cleanup():
 		success = false
 
+	# Test 8: Drag Pan Immediately After Touch Chord Reveal
+	if not test_drag_immediately_after_touch_chord():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -363,3 +367,95 @@ func test_input_state_reset_cleanup() -> bool:
 	grid.queue_free()
 	print("[PASS] Test 7: State Reset Cleanup verified")
 	return true
+
+func test_drag_immediately_after_touch_chord() -> bool:
+	print("[RUN] Test 8: Drag Pan Immediately After Touch Chord Reveal")
+	var router = InputRouter.new()
+	var grid = GridManager.new()
+	var camera = CameraController.new()
+	root.add_child(router)
+	root.add_child(grid)
+	root.add_child(camera)
+	router.bind_grid_manager(grid)
+	router.bind_camera_controller(camera)
+	camera.position = Vector2(0, 0)
+	camera.target_position = Vector2(0, 0)
+	grid.safe_zone_radius = 0
+	router.drag_threshold = 6.0
+
+	var target = Vector2i(0, 0)
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			grid.set_mine_at(target + Vector2i(dx, dy), false)
+	grid.set_mine_at(Vector2i(1, 0), true)
+
+	grid.reveal_cell(target)
+	grid.toggle_flag(Vector2i(1, 0))
+
+	# 1. Touch chord on (0, 0)
+	var screen_pos = Vector2(16, 16)
+	var touch_down = InputEventScreenTouch.new()
+	touch_down.index = 0
+	touch_down.pressed = true
+	touch_down.position = screen_pos
+	router.process_input(touch_down)
+
+	var touch_up = InputEventScreenTouch.new()
+	touch_up.index = 0
+	touch_up.pressed = false
+	touch_up.position = screen_pos
+	router.process_input(touch_up)
+
+	# Verify neighbor cell revealed via chord
+	if not grid.get_cell(Vector2i(0, 1)).is_revealed:
+		print("[FAIL] Touch chord did not reveal neighbor cell")
+		router.queue_free()
+		grid.queue_free()
+		camera.queue_free()
+		return false
+
+	# 2. Right-click drag immediately (< 250ms)
+	var prev_cam_pos = camera.target_position
+	var start_pos = Vector2(16, 16)
+	var drag_pos = start_pos + Vector2(40, 20)
+
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_RIGHT, true, start_pos))
+	router.process_input(_create_mouse_motion_event(drag_pos, Vector2(40, 20)))
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_RIGHT, false, drag_pos))
+
+	var expected_cam_pos = prev_cam_pos - Vector2(40, 20)
+	if camera.target_position.distance_to(expected_cam_pos) > 0.01:
+		print("[FAIL] Camera did not pan after right-click drag. Got: ", camera.target_position, " expected: ", expected_cam_pos)
+		router.queue_free()
+		grid.queue_free()
+		camera.queue_free()
+		return false
+
+	if grid.get_cell(Vector2i(0, 0)).is_flagged or grid.get_cell(Vector2i(1, 1)).is_flagged:
+		print("[FAIL] Unintended flag placed during right-click drag")
+		router.queue_free()
+		grid.queue_free()
+		camera.queue_free()
+		return false
+
+	# 3. Middle-click drag immediately (< 250ms)
+	prev_cam_pos = camera.target_position
+	var mmb_drag_pos = start_pos + Vector2(-30, 50)
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_MIDDLE, true, start_pos))
+	router.process_input(_create_mouse_motion_event(mmb_drag_pos, Vector2(-30, 50)))
+	router.process_input(_create_mouse_button_event(MOUSE_BUTTON_MIDDLE, false, mmb_drag_pos))
+
+	expected_cam_pos = prev_cam_pos - Vector2(-30, 50)
+	if camera.target_position.distance_to(expected_cam_pos) > 0.01:
+		print("[FAIL] Camera did not pan after middle-click drag. Got: ", camera.target_position, " expected: ", expected_cam_pos)
+		router.queue_free()
+		grid.queue_free()
+		camera.queue_free()
+		return false
+
+	router.queue_free()
+	grid.queue_free()
+	camera.queue_free()
+	print("[PASS] Test 8: Drag Pan Immediately After Touch Chord Reveal verified")
+	return true
+

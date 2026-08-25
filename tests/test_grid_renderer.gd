@@ -322,13 +322,53 @@ func test_null_grid_manager_safety() -> bool:
 	return true
 
 func test_font_caching() -> bool:
-	print("[RUN] Test 8: Font Caching & Custom Font Handling")
+	print("[RUN] Test 8: Font Caching & Custom Font Handling (Embedded MSDF Font)")
 	var renderer = GridRenderer.new()
+
+	# Verify DEFAULT_FONT_PATH constant
+	if renderer.get("DEFAULT_FONT_PATH") != "res://assets/fonts/NotoSans-Bold.ttf":
+		print("[FAIL] GridRenderer.DEFAULT_FONT_PATH constant missing or incorrect. Expected 'res://assets/fonts/NotoSans-Bold.ttf', got: ", renderer.get("DEFAULT_FONT_PATH"))
+		renderer.free()
+		return false
 
 	# Default active font should create and cache MSDF font
 	var font1 = renderer._get_active_font()
 	if font1 == null:
 		print("[FAIL] _get_active_font returned null")
+		renderer.free()
+		return false
+
+	# Verify MSDF parameters on active font
+	if font1 is FontFile:
+		var font_file = font1 as FontFile
+		if not font_file.multichannel_signed_distance_field:
+			print("[FAIL] FontFile.multichannel_signed_distance_field is not true")
+			renderer.free()
+			return false
+		if font_file.msdf_pixel_range != 16:
+			print("[FAIL] FontFile.msdf_pixel_range is not 16. Got: ", font_file.msdf_pixel_range)
+			renderer.free()
+			return false
+		if font_file.msdf_size != 48:
+			print("[FAIL] FontFile.msdf_size is not 48. Got: ", font_file.msdf_size)
+			renderer.free()
+			return false
+	elif font1 is SystemFont:
+		var sys_font = font1 as SystemFont
+		if not sys_font.multichannel_signed_distance_field:
+			print("[FAIL] SystemFont.multichannel_signed_distance_field is not true")
+			renderer.free()
+			return false
+		if sys_font.msdf_pixel_range != 16:
+			print("[FAIL] SystemFont.msdf_pixel_range is not 16. Got: ", sys_font.msdf_pixel_range)
+			renderer.free()
+			return false
+		if sys_font.msdf_size != 48:
+			print("[FAIL] SystemFont.msdf_size is not 48. Got: ", sys_font.msdf_size)
+			renderer.free()
+			return false
+	else:
+		print("[FAIL] Unexpected font type returned: ", font1.get_class())
 		renderer.free()
 		return false
 
@@ -343,6 +383,13 @@ func test_font_caching() -> bool:
 	renderer.custom_font = custom_f
 	if renderer._get_active_font() != custom_f:
 		print("[FAIL] custom_font was not returned by _get_active_font")
+		renderer.free()
+		return false
+
+	# Resetting custom_font to null should return cached default font again
+	renderer.custom_font = null
+	if renderer._get_active_font() != font1:
+		print("[FAIL] Clearing custom_font did not restore cached default font")
 		renderer.free()
 		return false
 

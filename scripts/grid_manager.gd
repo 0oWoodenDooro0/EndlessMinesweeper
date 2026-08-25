@@ -4,7 +4,6 @@ extends Node2D
 const GameSession = preload("res://scripts/game_session.gd")
 const ChunkManager = preload("res://scripts/chunk_manager.gd")
 const ChunkData = preload("res://scripts/chunk_data.gd")
-const CameraController = preload("res://scripts/camera_controller.gd")
 
 signal cell_revealed(pos: Vector2i, is_mine: bool)
 signal cell_flag_changed(pos: Vector2i, is_flagged: bool)
@@ -27,10 +26,7 @@ signal chunk_unlocked(chunk_pos: Vector2i, recovered_flags: Array[Vector2i])
 		if chunk_manager != null:
 			chunk_manager.chunk_size = value
 @export var enable_chunk_lockout: bool = true
-@export var drag_threshold: float = 16.0
-@export var long_press_duration: float = 0.15
 @export var lod_zoom_threshold: float = 0.9
-@export var camera_controller: CameraController
 @export var custom_font: Font = null
 
 var _default_msdf_font: Font = null
@@ -50,45 +46,11 @@ var chunks: Dictionary:
 		return {}
 var visible_rect: Rect2 = Rect2(-640, -360, 1280, 720)
 
-var _is_right_mouse_down: bool = false
-var _right_mouse_dragged: bool = false
-var _right_mouse_press_pos: Vector2 = Vector2.ZERO
-var _right_mouse_press_cell: Vector2i = Vector2i.ZERO
-var _is_middle_mouse_down: bool = false
-var _middle_mouse_dragged: bool = false
-var _middle_mouse_press_pos: Vector2 = Vector2.ZERO
-var _middle_mouse_press_cell: Vector2i = Vector2i.ZERO
-var _last_mouse_world_pos: Vector2 = Vector2.ZERO
-
-var _touch_points: Dictionary = {} # index -> Vector2
-var _is_single_touch_active: bool = false
-var _touch_press_pos: Vector2 = Vector2.ZERO
-var _touch_press_cell: Vector2i = Vector2i.ZERO
-var _touch_press_cell_was_revealed: bool = false
-var _touch_hold_time: float = 0.0
-var _touch_dragged: bool = false
-var _touch_long_pressed: bool = false
-var _is_multi_touch_active: bool = false
-var _pinch_previous_dist: float = -1.0
-var _pinch_previous_center: Vector2 = Vector2.ZERO
-var _last_touch_time_msec: int = -999999
-
 func _init() -> void:
 	_init_chunk_manager()
 
-func _ready() -> void:
-	_auto_find_camera_controller()
-
-func _auto_find_camera_controller() -> void:
-	if camera_controller != null:
-		return
-	if get_parent() != null:
-		if get_parent().has_node("Camera2D"):
-			camera_controller = get_parent().get_node("Camera2D") as CameraController
-		elif get_parent().has_node("CameraController"):
-			camera_controller = get_parent().get_node("CameraController") as CameraController
-		elif get_parent() is CameraController:
-			camera_controller = get_parent() as CameraController
+func is_cell_revealed(pos: Vector2i) -> bool:
+	return grid_data.has(pos) and grid_data[pos].is_revealed
 
 func _init_chunk_manager() -> void:
 	if chunk_manager == null:
@@ -313,19 +275,6 @@ func reset_game(new_seed: int = -1) -> void:
 	_chunk_mine_cache.clear()
 	grid_data.clear()
 	chunk_manager.reset(chunk_size)
-	_is_right_mouse_down = false
-	_right_mouse_dragged = false
-	_is_middle_mouse_down = false
-	_middle_mouse_dragged = false
-	_last_mouse_world_pos = Vector2.ZERO
-	_touch_points.clear()
-	_is_single_touch_active = false
-	_touch_dragged = false
-	_touch_long_pressed = false
-	_is_multi_touch_active = false
-	_pinch_previous_dist = -1.0
-	_pinch_previous_center = Vector2.ZERO
-	_last_touch_time_msec = -999999
 	if session != null:
 		session.reset()
 	game_reset.emit()
@@ -534,170 +483,6 @@ func chord_reveal(pos: Vector2i) -> bool:
 
 func world_to_cell(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(floor(world_pos.x / float(cell_size.x))), int(floor(world_pos.y / float(cell_size.y))))
-
-func _get_mouse_world_pos(event: InputEventMouse) -> Vector2:
-	if is_inside_tree() and get_viewport() != null:
-		return get_global_mouse_position()
-	return event.position
-
-func _get_current_mouse_world_pos(event: InputEvent = null) -> Vector2:
-	if is_inside_tree() and get_viewport() != null:
-		return get_global_mouse_position()
-	if event is InputEventMouse:
-		return event.position
-	return _last_mouse_world_pos
-
-func _get_touch_world_pos(screen_pos: Vector2) -> Vector2:
-	if is_inside_tree() and get_viewport() != null:
-		var canvas_transform = get_viewport().get_canvas_transform()
-		return canvas_transform.affine_inverse() * screen_pos
-	return screen_pos
-
-func _handle_screen_touch(event: InputEventScreenTouch) -> void:
-	_last_touch_time_msec = Time.get_ticks_msec()
-	_auto_find_camera_controller()
-
-	if event.pressed:
-		_touch_points[event.index] = event.position
-		if _touch_points.size() == 1 and event.index == 0:
-			_is_single_touch_active = true
-			_touch_press_pos = event.position
-			var world_pos = _get_touch_world_pos(event.position)
-			_touch_press_cell = world_to_cell(world_pos)
-			_touch_press_cell_was_revealed = grid_data.has(_touch_press_cell) and grid_data[_touch_press_cell].is_revealed
-			_touch_hold_time = 0.0
-			_touch_dragged = false
-			_touch_long_pressed = false
-			_is_multi_touch_active = false
-		elif _touch_points.size() >= 2:
-			_is_single_touch_active = false
-			_is_multi_touch_active = true
-			if _touch_points.has(0) and _touch_points.has(1):
-				_pinch_previous_dist = _touch_points[0].distance_to(_touch_points[1])
-				_pinch_previous_center = (_touch_points[0] + _touch_points[1]) / 2.0
-	else:
-		if _touch_points.has(event.index):
-			_touch_points.erase(event.index)
-
-		if event.index == 0 and _is_single_touch_active:
-			if not _touch_dragged and not _touch_long_pressed:
-				if _touch_press_cell_was_revealed:
-					chord_reveal(_touch_press_cell)
-				else:
-					reveal_cell(_touch_press_cell)
-			_is_single_touch_active = false
-			_touch_dragged = false
-			_touch_long_pressed = false
-
-		if _touch_points.size() < 2:
-			_is_multi_touch_active = false
-			_pinch_previous_dist = -1.0
-
-func _handle_screen_drag(event: InputEventScreenDrag) -> void:
-	_last_touch_time_msec = Time.get_ticks_msec()
-	_auto_find_camera_controller()
-
-	if _touch_points.has(event.index):
-		_touch_points[event.index] = event.position
-
-	if _touch_points.size() == 1 and event.index == 0 and _is_single_touch_active:
-		if not _touch_dragged:
-			if event.position.distance_to(_touch_press_pos) > drag_threshold or _touch_long_pressed:
-				_touch_dragged = true
-		if _touch_dragged or _touch_long_pressed:
-			if camera_controller != null:
-				camera_controller.pan_by(event.relative)
-	elif _touch_points.size() >= 2 and _is_multi_touch_active:
-		if _touch_points.has(0) and _touch_points.has(1):
-			var p0 = _touch_points[0]
-			var p1 = _touch_points[1]
-			var curr_dist = p0.distance_to(p1)
-			var curr_center = (p0 + p1) / 2.0
-			if _pinch_previous_dist > 0.0 and curr_dist > 0.0:
-				var factor = curr_dist / _pinch_previous_dist
-				if camera_controller != null:
-					camera_controller.apply_pinch_zoom(factor)
-					var center_delta = curr_center - _pinch_previous_center
-					camera_controller.pan_by(center_delta)
-			_pinch_previous_dist = curr_dist
-			_pinch_previous_center = curr_center
-
-func _process(delta: float) -> void:
-	if is_game_over:
-		return
-	if _is_single_touch_active and not _touch_dragged and not _touch_long_pressed:
-		_touch_hold_time += delta
-		if _touch_hold_time >= long_press_duration:
-			_touch_long_pressed = true
-			if not _touch_press_cell_was_revealed:
-				toggle_flag(_touch_press_cell)
-				if Input.has_method("vibrate_handheld"):
-					Input.vibrate_handheld(50)
-
-func _unhandled_input(event: InputEvent) -> void:
-	if is_game_over:
-		return
-
-	if event is InputEventScreenTouch:
-		_handle_screen_touch(event)
-	elif event is InputEventScreenDrag:
-		_handle_screen_drag(event)
-	elif event is InputEventMouseButton:
-		if _is_single_touch_active or _is_multi_touch_active or (_last_touch_time_msec > 0 and Time.get_ticks_msec() - _last_touch_time_msec < 250):
-			return
-		var world_pos = _get_mouse_world_pos(event)
-		_last_mouse_world_pos = world_pos
-		var cell_pos = world_to_cell(world_pos)
-		if event.pressed:
-			if event.button_index == MOUSE_BUTTON_LEFT:
-				if event.double_click:
-					chord_reveal(cell_pos)
-				else:
-					reveal_cell(cell_pos)
-			elif event.button_index == MOUSE_BUTTON_RIGHT:
-				_is_right_mouse_down = true
-				_right_mouse_dragged = false
-				_right_mouse_press_pos = event.position
-				_right_mouse_press_cell = cell_pos
-			elif event.button_index == MOUSE_BUTTON_MIDDLE:
-				_is_middle_mouse_down = true
-				_middle_mouse_dragged = false
-				_middle_mouse_press_pos = event.position
-				_middle_mouse_press_cell = cell_pos
-		else:
-			if event.button_index == MOUSE_BUTTON_RIGHT:
-				if _is_right_mouse_down and not _right_mouse_dragged:
-					toggle_flag(_right_mouse_press_cell)
-				_is_right_mouse_down = false
-				_right_mouse_dragged = false
-			elif event.button_index == MOUSE_BUTTON_MIDDLE:
-				if _is_middle_mouse_down and not _middle_mouse_dragged:
-					chord_reveal(_middle_mouse_press_cell)
-				_is_middle_mouse_down = false
-				_middle_mouse_dragged = false
-
-	elif event is InputEventMouseMotion:
-		var world_pos = _get_mouse_world_pos(event)
-		_last_mouse_world_pos = world_pos
-		if _is_right_mouse_down and not _right_mouse_dragged:
-			if event.position.distance_to(_right_mouse_press_pos) > drag_threshold:
-				_right_mouse_dragged = true
-		if _is_middle_mouse_down and not _middle_mouse_dragged:
-			if event.position.distance_to(_middle_mouse_press_pos) > drag_threshold:
-				_middle_mouse_dragged = true
-
-	elif event.is_action_pressed("reveal_cell") and not event.is_echo():
-		var world_pos = _get_current_mouse_world_pos(event)
-		var cell_pos = world_to_cell(world_pos)
-		if grid_data.has(cell_pos) and grid_data[cell_pos].is_revealed:
-			chord_reveal(cell_pos)
-		else:
-			reveal_cell(cell_pos)
-
-	elif event.is_action_pressed("flag_cell") and not event.is_echo():
-		var world_pos = _get_current_mouse_world_pos(event)
-		var cell_pos = world_to_cell(world_pos)
-		toggle_flag(cell_pos)
 
 func is_lod_active() -> bool:
 	return current_zoom_level <= lod_zoom_threshold

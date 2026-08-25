@@ -6,6 +6,7 @@ const SaveManager = preload("res://scripts/save_manager.gd")
 const GridManager = preload("res://scripts/grid_manager.gd")
 const HUD = preload("res://scripts/hud.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
+const InputRouter = preload("res://scripts/input_router.gd")
 
 @export var save_file_path: String = "user://savegame.json":
 	set(val):
@@ -18,6 +19,7 @@ const CameraController = preload("res://scripts/camera_controller.gd")
 var grid_manager: GridManager
 var camera: CameraController
 var hud: HUD
+var input_router: InputRouter
 var session: GameSession = GameSession.new()
 
 var save_manager: SaveManager = SaveManager.new()
@@ -58,6 +60,8 @@ func _ensure_node_references() -> void:
 		camera = get_node_or_null("Camera2D") as CameraController
 	if hud == null:
 		hud = get_node_or_null("HUD") as HUD
+	if input_router == null:
+		input_router = get_node_or_null("InputRouter") as InputRouter
 
 	if hud != null:
 		hud.setup_ui_nodes()
@@ -67,6 +71,12 @@ func _ensure_node_references() -> void:
 
 	if grid_manager != null:
 		grid_manager.bind_session(session)
+
+	if input_router != null:
+		if grid_manager != null:
+			input_router.bind_grid_manager(grid_manager)
+		if camera != null:
+			input_router.bind_camera_controller(camera)
 
 func _try_auto_load() -> void:
 	if save_manager.has_save(save_file_path):
@@ -110,7 +120,12 @@ func _on_session_stats_changed(_stats: Dictionary = {}) -> void:
 	_is_dirty = true
 
 func _on_session_game_over(_hit_pos: Vector2i = Vector2i.ZERO) -> void:
+	if input_router != null:
+		input_router.is_game_over = true
 	save_game()
 
 func _on_session_game_reset() -> void:
+	if input_router != null:
+		input_router.is_game_over = false
+		input_router.reset_state()
 	save_game()

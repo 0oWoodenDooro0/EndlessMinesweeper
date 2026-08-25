@@ -42,22 +42,6 @@ func _auto_find_grid_manager() -> void:
 		elif get_parent() is GridManager:
 			grid_manager = get_parent() as GridManager
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("zoom_in"):
-		apply_zoom_step(1)
-	elif event.is_action_pressed("zoom_out"):
-		apply_zoom_step(-1)
-
-	if event.is_action_pressed("middle_click") or event.is_action_pressed("right_click"):
-		is_panning = true
-	elif event.is_action_released("middle_click") and not Input.is_action_pressed("right_click"):
-		is_panning = false
-	elif event.is_action_released("right_click") and not Input.is_action_pressed("middle_click"):
-		is_panning = false
-
-	if is_panning and event is InputEventMouseMotion:
-		pan_by(event.relative)
-
 func apply_zoom_step(direction: int) -> void:
 	var factor = 1.0 + (zoom_step * direction)
 	var new_zoom_val = clamp(target_zoom.x * factor, min_zoom, max_zoom)

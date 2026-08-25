@@ -36,6 +36,10 @@ func _init():
 	if not test_button_focus_mode_and_release():
 		success = false
 
+	# Test 8: Global GUI Theme Font & License Verification
+	if not test_gui_theme_font_and_license():
+		success = false
+
 	print("--- Test Suite Finished ---")
 	if success:
 		print("ALL TESTS PASSED")
@@ -369,5 +373,40 @@ func test_button_focus_mode_and_release() -> bool:
 
 	hud.free()
 	print("[PASS] Test 7: Button focus mode & focus release behavior verified")
+	return true
+
+func test_gui_theme_font_and_license() -> bool:
+	print("[RUN] Test 8: Global GUI Theme Font & License Verification")
+
+	# Verify project setting for gui theme font
+	var theme_font_path = ProjectSettings.get_setting("gui/theme/custom_font", "")
+	if theme_font_path != "res://assets/fonts/NotoSans-Bold.ttf":
+		print("[FAIL] ProjectSettings gui/theme/custom_font is not 'res://assets/fonts/NotoSans-Bold.ttf', got: ", theme_font_path)
+		return false
+
+	# Verify font resource exists and is loadable
+	if not ResourceLoader.exists(theme_font_path):
+		print("[FAIL] Font file does not exist at: ", theme_font_path)
+		return false
+
+	var font_res = load(theme_font_path)
+	if font_res == null:
+		print("[FAIL] Failed to load font resource from: ", theme_font_path)
+		return false
+
+	# Verify OFL license file exists
+	if not FileAccess.file_exists("res://assets/fonts/OFL.txt"):
+		print("[FAIL] OFL license file missing at res://assets/fonts/OFL.txt")
+		return false
+
+	# Verify HUD scene controls resolve properly with font available
+	var hud_scene = preload("res://scenes/hud.tscn")
+	var hud_inst = hud_scene.instantiate()
+	if hud_inst == null:
+		print("[FAIL] Failed to instantiate hud scene")
+		return false
+
+	hud_inst.free()
+	print("[PASS] Test 8: Global GUI theme font & license verified")
 	return true
 

@@ -1,12 +1,15 @@
 class_name CameraController
 extends Camera2D
 
+const GridRenderer = preload("res://scripts/grid_renderer.gd")
+
 @export var min_zoom: float = 0.2
 @export var max_zoom: float = 8.0
 @export var zoom_step: float = 0.15
 @export var zoom_smoothness: float = 15.0
 @export var pan_smoothness: float = 20.0
 @export var grid_manager: GridManager
+@export var grid_renderer: GridRenderer
 
 var target_zoom: Vector2 = Vector2(1.0, 1.0)
 var target_position: Vector2 = Vector2.ZERO
@@ -34,13 +37,17 @@ func force_update_visible_area() -> void:
 	_notify_grid_manager()
 
 func _auto_find_grid_manager() -> void:
-	if grid_manager != null:
-		return
 	if get_parent() != null:
-		if get_parent().has_node("GridManager"):
-			grid_manager = get_parent().get_node("GridManager") as GridManager
-		elif get_parent() is GridManager:
-			grid_manager = get_parent() as GridManager
+		if grid_manager == null:
+			if get_parent().has_node("GridManager"):
+				grid_manager = get_parent().get_node("GridManager") as GridManager
+			elif get_parent() is GridManager:
+				grid_manager = get_parent() as GridManager
+		if grid_renderer == null:
+			if get_parent().has_node("GridRenderer"):
+				grid_renderer = get_parent().get_node("GridRenderer") as GridRenderer
+			elif get_parent() is GridRenderer:
+				grid_renderer = get_parent() as GridRenderer
 
 func apply_zoom_step(direction: int) -> void:
 	var factor = 1.0 + (zoom_step * direction)
@@ -77,9 +84,12 @@ func update_camera(delta: float) -> void:
 func _notify_grid_manager() -> void:
 	_last_notified_position = position
 	_last_notified_zoom = zoom
-	if grid_manager != null:
-		var current_zoom_val = zoom.x if zoom.x > 0 else 1.0
-		grid_manager.update_visible_area(get_visible_world_rect(), current_zoom_val)
+	var current_zoom_val = zoom.x if zoom.x > 0 else 1.0
+	var v_rect = get_visible_world_rect()
+	if grid_renderer != null:
+		grid_renderer.update_visible_area(v_rect, current_zoom_val)
+	elif grid_manager != null:
+		grid_manager.update_visible_area(v_rect, current_zoom_val)
 
 func get_visible_world_rect() -> Rect2:
 	var vp_size = custom_viewport_size

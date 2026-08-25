@@ -1,6 +1,7 @@
 @tool
 extends SceneTree
 
+const GridRenderer = preload("res://scripts/grid_renderer.gd")
 const GridManager = preload("res://scripts/grid_manager.gd")
 const CameraController = preload("res://scripts/camera_controller.gd")
 const CellData = preload("res://scripts/cell_data.gd")
@@ -41,51 +42,61 @@ func _init():
 func test_lod_zoom_threshold() -> bool:
 	print("[RUN] Test 1: LOD Zoom Threshold & is_lod_active State Transitions")
 	var grid = GridManager.new()
+	var renderer = GridRenderer.new()
+	renderer.bind_grid_manager(grid)
 
-	if grid.lod_zoom_threshold != 0.9:
-		print("[FAIL] Default lod_zoom_threshold mismatch. Expected: 0.9, Got: ", grid.lod_zoom_threshold)
+	if renderer.lod_zoom_threshold != 0.9:
+		print("[FAIL] Default lod_zoom_threshold mismatch. Expected: 0.9, Got: ", renderer.lod_zoom_threshold)
+		renderer.free()
 		grid.free()
 		return false
 
-	if grid.current_zoom_level != 1.0:
-		print("[FAIL] Default current_zoom_level mismatch. Expected: 1.0, Got: ", grid.current_zoom_level)
+	if renderer.current_zoom_level != 1.0:
+		print("[FAIL] Default current_zoom_level mismatch. Expected: 1.0, Got: ", renderer.current_zoom_level)
+		renderer.free()
 		grid.free()
 		return false
 
-	if grid.is_lod_active():
+	if renderer.is_lod_active():
 		print("[FAIL] is_lod_active should be false by default at zoom 1.0")
+		renderer.free()
 		grid.free()
 		return false
 
 	# Test above threshold
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.95)
-	if grid.current_zoom_level != 0.95 or grid.is_lod_active():
-		print("[FAIL] Zoom 0.95 should not trigger LOD. is_lod_active: ", grid.is_lod_active())
+	renderer.update_visible_area(Rect2(-640, -360, 1280, 720), 0.95)
+	if renderer.current_zoom_level != 0.95 or renderer.is_lod_active():
+		print("[FAIL] Zoom 0.95 should not trigger LOD. is_lod_active: ", renderer.is_lod_active())
+		renderer.free()
 		grid.free()
 		return false
 
 	# Test exactly at threshold
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.9)
-	if not grid.is_lod_active():
+	renderer.update_visible_area(Rect2(-640, -360, 1280, 720), 0.9)
+	if not renderer.is_lod_active():
 		print("[FAIL] Zoom 0.9 should trigger LOD")
+		renderer.free()
 		grid.free()
 		return false
 
 	# Test below threshold
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.25)
-	if not grid.is_lod_active():
+	renderer.update_visible_area(Rect2(-640, -360, 1280, 720), 0.25)
+	if not renderer.is_lod_active():
 		print("[FAIL] Zoom 0.25 should trigger LOD")
+		renderer.free()
 		grid.free()
 		return false
 
 	# Test custom threshold
-	grid.lod_zoom_threshold = 0.6
-	grid.update_visible_area(Rect2(-640, -360, 1280, 720), 0.55)
-	if not grid.is_lod_active():
+	renderer.lod_zoom_threshold = 0.6
+	renderer.update_visible_area(Rect2(-640, -360, 1280, 720), 0.55)
+	if not renderer.is_lod_active():
 		print("[FAIL] Zoom 0.55 should trigger LOD when threshold is 0.6")
+		renderer.free()
 		grid.free()
 		return false
 
+	renderer.free()
 	grid.free()
 	print("[PASS] Test 1: LOD zoom threshold and state transitions verified")
 	return true
@@ -93,22 +104,26 @@ func test_lod_zoom_threshold() -> bool:
 func test_lazy_cell_rendering() -> bool:
 	print("[RUN] Test 2: Lazy Cell Rendering Memory Protection")
 	var grid = GridManager.new()
+	var renderer = GridRenderer.new()
 	grid.world_seed = 42
-	grid.visible_rect = Rect2(-320, -320, 640, 640) # 20x20 = 400 cells
-	grid.current_zoom_level = 1.0
+	renderer.bind_grid_manager(grid)
+	renderer.visible_rect = Rect2(-320, -320, 640, 640) # 20x20 = 400 cells
+	renderer.current_zoom_level = 1.0
 
 	# Initial state: grid_data must be empty
 	if grid.grid_data.size() != 0:
 		print("[FAIL] grid_data should initially be empty. Got size: ", grid.grid_data.size())
+		renderer.free()
 		grid.free()
 		return false
 
-	# Execute _draw() in normal detail mode
-	grid._draw()
+	# Execute _draw() on renderer in normal detail mode
+	renderer._draw()
 
 	# Lazy rendering check: grid_data should NOT have had phantom CellData objects inserted
 	if grid.grid_data.size() != 0:
 		print("[FAIL] Lazy rendering failed: _draw() populated grid_data with unvisited cells. Size: ", grid.grid_data.size())
+		renderer.free()
 		grid.free()
 		return false
 
@@ -117,18 +132,21 @@ func test_lazy_cell_rendering() -> bool:
 	var size_after_reveal = grid.grid_data.size()
 	if size_after_reveal == 0:
 		print("[FAIL] reveal_cell should add cells to grid_data")
+		renderer.free()
 		grid.free()
 		return false
 
 	# Redraw again in detail mode
-	grid._draw()
+	renderer._draw()
 
 	# Verify grid_data size did not increase due to _draw()
 	if grid.grid_data.size() != size_after_reveal:
 		print("[FAIL] _draw() added new cells to grid_data after reveal. Before: ", size_after_reveal, " After: ", grid.grid_data.size())
+		renderer.free()
 		grid.free()
 		return false
 
+	renderer.free()
 	grid.free()
 	print("[PASS] Test 2: Lazy cell rendering verified without phantom CellData instantiation")
 	return true
@@ -136,21 +154,25 @@ func test_lazy_cell_rendering() -> bool:
 func test_lod_chunk_overview_states() -> bool:
 	print("[RUN] Test 3: Macro Chunk LOD Overview State & Non-allocating Drawing")
 	var grid = GridManager.new()
+	var renderer = GridRenderer.new()
 	grid.world_seed = 999
 	grid.chunk_size = Vector2i(8, 8)
-	grid.visible_rect = Rect2(-1024, -1024, 2048, 2048) # Covers multiple chunks
-	grid.current_zoom_level = 0.3 # LOD overview mode
+	renderer.bind_grid_manager(grid)
+	renderer.visible_rect = Rect2(-1024, -1024, 2048, 2048) # Covers multiple chunks
+	renderer.current_zoom_level = 0.3 # LOD overview mode
 
 	# Initial chunks should be empty
 	if grid.chunks.size() != 0:
 		print("[FAIL] Chunks should initially be empty")
+		renderer.free()
 		grid.free()
 		return false
 
 	# Drawing in LOD mode should not allocate chunks in chunk_manager for unexplored areas
-	grid._draw()
+	renderer._draw()
 	if grid.chunks.size() != 0:
 		print("[FAIL] _draw() in LOD mode allocated chunks in chunk_manager. Size: ", grid.chunks.size())
+		renderer.free()
 		grid.free()
 		return false
 
@@ -169,18 +191,21 @@ func test_lod_chunk_overview_states() -> bool:
 
 	if chunk_progress.get_progress() != 0.5:
 		print("[FAIL] Chunk progress calculation mismatch. Expected: 0.5, Got: ", chunk_progress.get_progress())
+		renderer.free()
 		grid.free()
 		return false
 
-	# Ensure _draw() executes across all these chunk states without errors
-	grid._draw()
+	# Ensure renderer _draw() executes across all these chunk states without errors
+	renderer._draw()
 
 	# Ensure grid_data has no phantom cells created by LOD overview draw
 	if grid.grid_data.size() != 0:
 		print("[FAIL] LOD _draw() inserted cells into grid_data. Size: ", grid.grid_data.size())
+		renderer.free()
 		grid.free()
 		return false
 
+	renderer.free()
 	grid.free()
 	print("[PASS] Test 3: Macro Chunk LOD overview states verified")
 	return true

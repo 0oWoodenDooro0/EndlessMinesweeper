@@ -131,6 +131,10 @@ func are_all_chunk_mines_flagged(c_pos: Vector2i) -> bool:
 	for m in mines:
 		if not is_cell_flagged_provider.call(m):
 			return false
+	var safe_positions = get_chunk_safe_positions(c_pos)
+	for s in safe_positions:
+		if is_cell_flagged_provider.call(s):
+			return false
 	return true
 
 func register_flag_toggle(cell_pos: Vector2i, is_flagged: bool) -> Dictionary:
@@ -141,7 +145,7 @@ func register_flag_toggle(cell_pos: Vector2i, is_flagged: bool) -> Dictionary:
 			"chunk_pos": chunk.chunk_pos
 		}
 
-	if is_flagged and are_all_chunk_mines_flagged(chunk.chunk_pos):
+	if are_all_chunk_mines_flagged(chunk.chunk_pos):
 		chunk.is_cleared = true
 		var auto_flags = get_chunk_mine_positions(chunk.chunk_pos)
 		chunk_cleared.emit(chunk.chunk_pos)

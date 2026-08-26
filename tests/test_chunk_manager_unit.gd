@@ -636,30 +636,46 @@ func test_are_all_chunk_mines_flagged_and_flag_toggle_clearance() -> bool:
 		print("[FAIL] Chunk (0, 0) should not be cleared when safe cell is flagged instead of remaining mine")
 		return false
 
-	# 4. Flag second and final mine at (1, 1) -> Chunk clears!
+	# 4. Flag second and final mine at (1, 1) while safe cell (1, 0) is still flagged -> Must NOT clear
 	flagged_cells[Vector2i(1, 1)] = true
 	var res2 = cm.register_flag_toggle(Vector2i(1, 1), true)
-	if res2.get("action") != "cleared":
-		print("[FAIL] Expected action 'cleared' when all mines flagged, got: ", res2)
+	if res2.get("action") != "flagged":
+		print("[FAIL] Expected action 'flagged' when all mines flagged but safe cell also flagged, got: ", res2)
+		return false
+	if cm.is_chunk_cleared(Vector2i(0, 0)):
+		print("[FAIL] Chunk (0, 0) should not be cleared when safe cell is flagged")
+		return false
+	if cm.are_all_chunk_mines_flagged(Vector2i(0, 0)):
+		print("[FAIL] are_all_chunk_mines_flagged should be false when safe cell is flagged")
+		return false
+	if cleared_signals.size() != 0:
+		print("[FAIL] chunk_cleared signal should not be emitted when safe cell is flagged: ", cleared_signals)
+		return false
+
+	# 5. Unflag the misplaced safe cell at (1, 0) -> Now exact mine flags -> Triggers chunk clearance!
+	flagged_cells[Vector2i(1, 0)] = false
+	var res_unflag = cm.register_flag_toggle(Vector2i(1, 0), false)
+	if res_unflag.get("action") != "cleared":
+		print("[FAIL] Expected action 'cleared' upon unflagging misplaced safe cell, got: ", res_unflag)
 		return false
 
 	if not cm.is_chunk_cleared(Vector2i(0, 0)):
-		print("[FAIL] Chunk (0, 0) should be cleared after all mines flagged")
+		print("[FAIL] Chunk (0, 0) should be cleared after unflagging safe cell")
 		return false
 	if not cm.are_all_chunk_mines_flagged(Vector2i(0, 0)):
-		print("[FAIL] are_all_chunk_mines_flagged should be true after all mines flagged")
+		print("[FAIL] are_all_chunk_mines_flagged should be true after unflagging safe cell")
 		return false
 
-	var auto_flags: Array = res2.get("auto_flags", [])
+	var auto_flags: Array = res_unflag.get("auto_flags", [])
 	if auto_flags.size() != 2 or not auto_flags.has(Vector2i(0, 0)) or not auto_flags.has(Vector2i(1, 1)):
 		print("[FAIL] auto_flags payload mismatch: ", auto_flags)
 		return false
 
 	if cleared_signals.size() != 1 or cleared_signals[0] != Vector2i(0, 0):
-		print("[FAIL] chunk_cleared signal not emitted properly on mine-flagged clear: ", cleared_signals)
+		print("[FAIL] chunk_cleared signal not emitted properly on unflag clear: ", cleared_signals)
 		return false
 
-	# 5. Subsequent flag toggle on already cleared chunk
+	# 6. Subsequent flag toggle on already cleared chunk
 	var res_after = cm.register_flag_toggle(Vector2i(0, 0), false)
 	if res_after.get("action") != "none" and res_after.get("action") != "flagged":
 		print("[FAIL] Flag toggle on cleared chunk should return 'none' or 'flagged', got: ", res_after)
